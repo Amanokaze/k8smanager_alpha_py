@@ -6,4 +6,6 @@ manager/*.xlsx
 manager/*.sql
 okm_venv/
 result/
+old/
+viewer_old/
 *.bat

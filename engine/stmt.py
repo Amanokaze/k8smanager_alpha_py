@@ -20,6 +20,7 @@ SELECT_CLUSTERINFO_IP_MGRID = "select * from kubeclusterinfo where _ip='{}' and 
 SELECT_NAMESPACEINFO_CLUSTERID = "select * from kubensinfo where _clusterid={} and _enabled=1;"
 SELECT_NODEINFO_CLUSTERID = "select * from kubenodeinfo where _clusterid={} and _enabled=1;"
 SELECT_NODE_SYSCONTAINER_NODEID = "select nsc.*, n._nodename from kubenodesyscoinfo nsc, kubenodeinfo n where nsc._nodeid=n._nodeid and n._nodeid in ({});"
+SELECT_PODINFO_CLUSTERID = "select p.* from kubepodinfo p, kubenodeinfo n where p._nodeid = n._nodeid and n._clusterid={} and n._enabled=1 and p._enabled=1;"
 SELECT_PODINFO_NODEID = "select * from kubepodinfo where _nodeid in ({}) and _enabled=1;"
 SELECT_CONTAINERINFO_NODEID = "select c.*, p._uid as _poduid, n._nodename from kubecontainerinfo c, kubepodinfo p, kubenodeinfo n where c._podid=p._podid and p._nodeid=n._nodeid and p._enabled=1 and p._nodeid in ({});"
 SELECT_PODDEVICEINFO_DEVICETYPE = "select * from kubepoddeviceinfo where _devicetype='{}';"
