@@ -10,9 +10,9 @@ INSERT_TABLEINFO = "insert into kubetableinfo values ('{1}', 0, {0}, {0}, 0);"
 
 INSERT_TABLE = "insert into {} ({}) values ({});"
 SELECT_TABLE = "select {} from {} where {} {};"
+UPDATE_TABLE = "update {} set {} where {}={};"
 UPDATE_ENABLED = "update {} set _enabled=0 where {} in ({});"
 
-UPDATE_NODEINFO = "update kubenodeinfo set {} where _nodeid = {};"
 DELETE_LASTREALTIMEPERF = "delete from kubelastrealtimeperf where _nodeid={};"
 
 SELECT_MANAGERINFO_IP = "select * from kubemanagerinfo where _ip='{}';"
@@ -20,6 +20,12 @@ SELECT_CLUSTERINFO_IP_MGRID = "select * from kubeclusterinfo where _ip='{}' and 
 SELECT_NAMESPACEINFO_CLUSTERID = "select * from kubensinfo where _clusterid={} and _enabled=1;"
 SELECT_NODEINFO_CLUSTERID = "select * from kubenodeinfo where _clusterid={} and _enabled=1;"
 SELECT_NODE_SYSCONTAINER_NODEID = "select nsc.*, n._nodename from kubenodesyscoinfo nsc, kubenodeinfo n where nsc._nodeid=n._nodeid and n._nodeid in ({});"
+SELECT_REF_CONTAINERINFO_CLUSTERID = "select * from kuberefcontainerinfo ref where _clusterid={} and _enabled=1;"
+SELECT_SVCINFO_CLUSTERID= "select svc.* from kubesvcinfo svc, kubensinfo ns where ns._nsid=svc._nsid and ns._clusterid={} and svc._enabled=1;"
+SELECT_DEPLOYINFO_CLUSTERID = "select dep.* from kubedeployinfo dep, kubensinfo ns where ns._nsid=dep._nsid and ns._clusterid={} and dep._enabled=1;"
+SELECT_STSINFO_CLUSTERID = "select sts.* from kubestsinfo dep, kubensinfo ns where ns._nsid=sts._nsid and ns._clusterid={} and sts._enabled=1;"
+SELECT_DSINFO_CLUSTERID = "select ds.* from kubedsinfo ds, kubensinfo ns where ns._nsid=ds._nsid and ns._clusterid={} and ds._enabled=1;"
+SELECT_RSINFO_CLUSTERID = "select rs.* from kubersinfo rs, kubensinfo ns where ns._nsid=rs._nsid and ns._clusterid={} and rs._enabled=1;"
 SELECT_PODINFO_CLUSTERID = "select p.* from kubepodinfo p, kubenodeinfo n where p._nodeid = n._nodeid and n._clusterid={} and n._enabled=1 and p._enabled=1;"
 SELECT_PODINFO_NODEID = "select * from kubepodinfo where _nodeid in ({}) and _enabled=1;"
 SELECT_CONTAINERINFO_NODEID = "select c.*, p._uid as _poduid, n._nodename from kubecontainerinfo c, kubepodinfo p, kubenodeinfo n where c._podid=p._podid and p._nodeid=n._nodeid and p._enabled=1 and p._nodeid in ({});"

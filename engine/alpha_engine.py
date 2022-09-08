@@ -126,6 +126,7 @@ class Engine:
         dsdata = self.get_kube_ds_data(apps_api)
         rsdata = self.get_kube_rs_data(apps_api)
         deploydata = self.get_kube_deploy_data(apps_api)
+        stsdata = self.get_kube_sts_data(apps_api)
 
         kube_data = {
             "node": ndata,
@@ -135,8 +136,9 @@ class Engine:
             "ns": self.get_kube_ns_data(core_api),
             "svc": svcdata,
             "deploy": deploydata,
-            "dsdata": dsdata,
-            "rsdata": rsdata
+            "sts": stsdata,
+            "ds": dsdata,
+            "rs": rsdata
         }
 
         # 데이터 가져오는 부분이 실패하면 onTune DB의 입력 의미가 없어지므로 Thread를 종료함
@@ -360,9 +362,18 @@ class Engine:
                     "restarttime": max(list(self.svtime_to_timestampz(x.state.running.started_at) for x in pod.status.container_statuses)),
                     "nodename": pod.metadata.node_name,
                     "nsname": pod.metadata.namespace,
-                    "refkind": pod.metadata.owner_references[0].kind,
+                    "refkind": pod.metadata.owner_references[0].kind if "owner_references" in pod.metadata else "",
                     "refid": 0,
-                    "refuid": pod.metadata.owner_references[0].uid
+                    "refuid": pod.metadata.owner_references[0].uid if "owner_references" in pod.metadata else 0,
+                    "containers": list() if "owner_references" in pod.metadata or pod.metadata.owner_references or pod.metadata.owner_references[0].kind != 'Node' else list({
+                        "kind": "Pod",
+                        "name": x.name,
+                        "image": x.image,
+                        "ports": str(x.ports) if "ports" in x else "",
+                        "env": str(x.env) if "env" in x else "",
+                        "resources": str(x.resources) if "resources" in x else "",
+                        "volumemounts": str(x.volume_mounts) if "volume_mounts" in x else ""
+                    } for x in pod.spec.containers)
                 }
 
             self.log.write("GET", "Kube Pod Data Import is completed.")
@@ -387,7 +398,7 @@ class Engine:
             svc_data = dict()
 
             for svc in services.items:
-                svc_data[svc.metadata.name] = {
+                svc_data[svc.metadata.uid] = {
                     "nsid": 0,
                     "name": svc.metadata.name,
                     "uid": svc.metadata.uid,
@@ -410,7 +421,7 @@ class Engine:
             ds_data = dict()
 
             for ds in daemonsets.items():
-                ds_data[ds.metadata.name] = {
+                ds_data[ds.metadata.uid] = {
                     "nsid": 0,
                     "name": ds.metadata.name,
                     "uid": ds.metadata.uid,
@@ -422,7 +433,16 @@ class Engine:
                     "updated": ds.status.updated_number_scheduled,
                     "available": ds.status.number_available,
                     "selector": self.dict_to_str(ds.spec.selector.match_labels),
-                    "nsname": ds.metadata.namespace
+                    "nsname": ds.metadata.namespace,
+                    "containers": list({
+                        "kind": "DaemonSet",
+                        "name": x.name,
+                        "image": x.image,
+                        "ports": str(x.ports) if "ports" in x else "",
+                        "env": str(x.env) if "env" in x else "",
+                        "resources": str(x.resources) if "resources" in x else "",
+                        "volumemounts": str(x.volume_mounts) if "volume_mounts" in x else ""
+                    } for x in ds.spec.containers)
                 }
 
             return ds_data
@@ -436,7 +456,7 @@ class Engine:
             rs_data = dict()
 
             for rs in replicasets.items:
-                rs_data[rs.metadata.name] = {
+                rs_data[rs.metadata.uid] = {
                     "nsid": 0,
                     "name": rs.metadata.name,
                     "uid": rs.metadata.uid,
@@ -447,7 +467,19 @@ class Engine:
                     "availablers": rs.spec.status.available_replicas,
                     "observedgen": rs.spec.status.observed_generation,
                     "selector": self.dict_to_str(rs.spec.selector.match_labels),
-                    "nsname": rs.metadata.namespace
+                    "refkind": rs.metadata.owner_references[0].kind if "owner_references" in rs.metadata else "",
+                    "refid": 0,                    
+                    "refuid": rs.metadata.owner_references[0].uid if "owner_references" in rs.metadata else 0,
+                    "nsname": rs.metadata.namespace,
+                    "containers": list() if "owner_references" in rs.metadata else list({
+                        "kind": "ReplicaSet",
+                        "name": x.name,
+                        "image": x.image,
+                        "ports": str(x.ports) if "ports" in x else "",
+                        "env": str(x.env) if "env" in x else "",
+                        "resources": str(x.resources) if "resources" in x else "",
+                        "volumemounts": str(x.volume_mounts) if "volume_mounts" in x else ""
+                    } for x in rs.spec.containers)
                 }
 
             return rs_data                
@@ -461,7 +493,7 @@ class Engine:
             deploy_data = dict()
 
             for deploy in deployments.items:
-                deploy_data[deploy.metadata.name] = {
+                deploy_data[deploy.metadata.uid] = {
                     "nsid": 0,
                     "name": deploy.metadata.name,
                     "uid": deploy.metadata.uid,
@@ -473,10 +505,52 @@ class Engine:
                     "availablers": deploy.spec.status.available_replicas,
                     "observedgen": deploy.spec.status.observed_generation,
                     "selector": self.dict_to_str(deploy.spec.selector.match_labels),
-                    "nsname": deploy.metadata.namespace
+                    "nsname": deploy.metadata.namespace,
+                    "containers": list({
+                        "kind": "Deployment",
+                        "name": x.name,
+                        "image": x.image,
+                        "ports": str(x.ports) if "ports" in x else "",
+                        "env": str(x.env) if "env" in x else "",
+                        "resources": str(x.resources) if "resources" in x else "",
+                        "volumemounts": str(x.volume_mounts) if "volume_mounts" in x else ""
+                    } for x in deploy.spec.containers)
                 }
 
             return deploy_data                
+        except Exception as e:
+            self.log.write("Error", str(e))
+            return False
+
+    def get_kube_sts_data(self, api):
+        try:
+            statefulsets = api.list_stateful_set_for_all_namespaces()
+            sts_data = dict()
+
+            for sts in statefulsets.items:
+                sts_data[sts.metadata.uid] = {
+                    "nsid": 0,
+                    "name": sts.metadata.name,
+                    "uid": sts.metadata.uid,
+                    "starttime": self.svtime_to_timestampz(sts.metadata.creation_timestamp),
+                    "serviceaccount": sts.spec.template.spec.service_account,
+                    "replicas": sts.spec.status.replicas,
+                    "readyrs": sts.spec.status.ready_replicas,
+                    "availablers": sts.spec.status.available_replicas,
+                    "selector": self.dict_to_str(sts.spec.selector.match_labels),
+                    "nsname": sts.metadata.namespace,
+                    "containers": list({
+                        "kind": "StatefulSet",
+                        "name": x.name,
+                        "image": x.image,
+                        "ports": str(x.ports) if "ports" in x else "",
+                        "env": str(x.env) if "env" in x else "",
+                        "resources": str(x.resources) if "resources" in x else "",
+                        "volumemounts": str(x.volume_mounts) if "volume_mounts" in x else ""
+                    } for x in sts.spec.containers)
+                }
+
+            return sts_data                
         except Exception as e:
             self.log.write("Error", str(e))
             return False
@@ -559,17 +633,29 @@ class Engine:
             namespace_list = kube_data["ns"]     
             node_list = kube_data["node"]
             pod_list = kube_data["pod"]
+            svc_list = kube_data["svc"]
+            deploy_list = kube_data["deploy"]
+            sts_list = kube_data["sts"]
+            ds_list = kube_data["ds"]
+            rs_list = kube_data["rs"]
 
             # Pre-define data (여기에서의 Key는 Primary와 같은 Key값이 아니라 dictionary의 key-value의 key를 뜻함)
             manager_id = 0
             cluster_id = 0
-            namespace_query_dict = dict()
+            ref_container_list = list()
+            ref_container_query = list()
+
+            namespace_query_dict = dict()       # Key: UID
+            svc_query_dict = dict()             # Key: UID
+            deploy_query_dict = dict()          # Key: UID
+            ds_query_dict = dict()              # Key: UID
+            rs_query_dict = dict()              # Key: UID
+            sts_query_dict = dict()             # Key: UID
             node_query_dict = dict()            # Key: Nodename
             node_sysco_query_dict = dict()      # Key: Nodeid
             pod_query_dict = dict()             # Key: UID
             pod_container_query_dict = dict()   # Key: Podid
             pod_device_query_dict = dict()      # Key: Devicetype
-
 
             # Check Managerinfo table
             try:
@@ -639,6 +725,14 @@ class Engine:
                     cursor.execute(stmt.UPDATE_ENABLED.format("kubensinfo", "_nsid", ",".join(old_ns_id_list)))
                     conn.commit()
                     self.input_tableinfo("kubensinfo", cursor, conn)
+
+                # New NS ID Update
+                try:
+                    cur_dict.execute(stmt.SELECT_NAMESPACEINFO_CLUSTERID.format(cluster_id))
+                    result = cur_dict.fetchall()
+                    namespace_query_dict = dict({x["_nsname"]:x for x in result})
+                except:
+                    pass
             except Exception as e:
                 conn.rollback()
                 self.log.write("GET", f"Kubenamespaceinfo has an error. Put data process is stopped. - {str(e)}")
@@ -658,7 +752,7 @@ class Engine:
                     if node in node_query_dict:
                         if node_list[node]["uid"] != node_query_dict[node]["_nodeuid"]:
                             update_data = self.update_values(schema_obj, "kubenodeinfo", node_list[node])
-                            cursor.execute(stmt.UPDATE_NODEINFO.format(update_data, node_query_dict[node]["_nodeid"]))
+                            cursor.execute(stmt.UPDATE_TABLE.format("kubenodeinfo", update_data, "_nodeid", node_query_dict[node]["_nodeid"]))
                             conn.commit()
                             self.input_tableinfo("kubenodeinfo", cursor, conn)
                             #self.log.write("PUT", f"Kubenodeinfo information is updated - {node}")
@@ -752,7 +846,263 @@ class Engine:
                 conn.rollback()
                 self.log.write("GET", f"Kubenodesystemcontainer info has an error. Put data process is stopped. - {str(e)}")
                 return False
-                
+
+            # Assign Reference Containers table
+            # Container 정보는 Pod 뿐만 아니라, Deploy, DS, RS 모두 포함되므로 각각의 Container 정보를 취합해서 입력해야 함
+            # 하단 For Loop에서는 데이터 변수를 재선언 후(data=dict(pod) 등) pop 처리를 하나 여기에서는 직접 처리하며, 
+            # 그 이유는 이후에 재사용 시 'containers' 인스턴스를 제거해주기 위함
+            # 실제 처리 부분은 Deploy, DS, RS, Pod 데이터 입력 완료 후 처리 예정
+            pod_container_set = set()
+            for pod in pod_list:
+                pod_containers = pod_list[pod].pop("containers")
+                pod_container_set.update(pod_containers)
+            ref_container_list.extend(list(pod_container_set))
+
+            deploy_container_set = set()
+            for deploy in deploy_list:
+                deploy_containers = deploy_list[deploy].pop("containers")
+                deploy_container_set.update(deploy_containers)
+            ref_container_list.extend(list(deploy_container_set))
+
+            sts_container_set = set()
+            for sts in sts_list:
+                sts_containers = sts_list[sts].pop("containers")
+                sts_container_set.update(sts_containers)
+            ref_container_list.extend(list(sts_container_set))
+
+            ds_container_set = set()
+            for ds in ds_list:
+                ds_containers = ds_list[ds].pop("containers")
+                ds_container_set.update(ds_containers)
+            ref_container_list.extend(list(ds_container_set))
+
+            rs_container_set = set()
+            for rs in rs_list:
+                rs_containers = rs_list[rs].pop("containers")
+                rs_container_set.update(rs_containers)
+            ref_container_list.extend(list(rs_container_set))
+            
+            # Check Service info table
+            try:
+                cur_dict.execute(stmt.SELECT_SVCINFO_CLUSTERID.format(cluster_id))
+                svc_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+            except:
+                pass
+
+            try:
+                old_svc_list = dict(filter(lambda x: x[0] not in svc_list, svc_query_dict.items()))
+                new_svc_list = dict(filter(lambda x: x[0] not in svc_query_dict, svc_list.items()))
+                old_svc_id_list = list(str(x[1]["_svcid"]) for x in old_svc_list.items())
+
+                # New SVC Insertion
+                for new_svc in new_svc_list:
+                    svc_data = dict(new_svc_list[new_svc])
+                    svc_ns_name = svc_data.pop("nsname")
+                    svc_data["nsid"] = namespace_query_dict[svc_ns_name]["_nsid"]
+
+                    column_data = self.insert_columns_ref(schema_obj, "kubesvcinfo")
+                    value_data = self.insert_values(list(svc_data.values()))
+                    cursor.execute(stmt.INSERT_TABLE.format("kubesvcinfo", column_data, value_data))
+                    conn.commit()
+                    self.input_tableinfo("kubesvcinfo", cursor, conn)
+                    #self.log.write("PUT", f"Kubesvcinfo insertion is completed - {new_svc}")
+
+                # Old SVC Update
+                if len(old_svc_id_list) > 0:
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kubesvcinfo", "_svcid", ",".join(old_svc_list)))
+                    conn.commit()
+                    self.input_tableinfo("kubesvcinfo", cursor, conn)
+
+                # New SVC ID Update
+                try:
+                    cur_dict.execute(stmt.SELECT_SVCINFO_CLUSTERID.format(cluster_id))
+                    result = cur_dict.fetchall()
+                    svc_query_dict = dict({x["_uid"]:x for x in result})
+                except:
+                    pass
+            except Exception as e:
+                conn.rollback()
+                self.log.write("GET", f"Kubesvcinfo has an error. Put data process is stopped. - {str(e)}")
+                return False
+
+            # Check Deployment info table
+            try:
+                cur_dict.execute(stmt.SELECT_DEPLOYINFO_CLUSTERID.format(cluster_id))
+                deploy_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+            except:
+                pass
+
+            try:
+                old_deploy_list = dict(filter(lambda x: x[0] not in deploy_list, deploy_query_dict.items()))
+                new_deploy_list = dict(filter(lambda x: x[0] not in deploy_query_dict, deploy_list.items()))
+                old_deploy_id_list = list(str(x[1]["_deployid"]) for x in old_deploy_list.items())
+
+                # New deploy Insertion
+                for new_deploy in new_deploy_list:
+                    deploy_data = dict(new_deploy_list[new_deploy])
+                    deploy_ns_name = deploy_data.pop("nsname")
+                    deploy_data["nsid"] = namespace_query_dict[deploy_ns_name]["_nsid"]
+
+                    column_data = self.insert_columns_ref(schema_obj, "kubedeployinfo")
+                    value_data = self.insert_values(list(deploy_data.values()))
+                    cursor.execute(stmt.INSERT_TABLE.format("kubedeployinfo", column_data, value_data))
+                    conn.commit()
+                    self.input_tableinfo("kubedeployinfo", cursor, conn)
+                    #self.log.write("PUT", f"Kubedeployinfo insertion is completed - {new_deploy}")
+
+                # Old deploy Update
+                if len(old_deploy_id_list) > 0:
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kubedeployinfo", "_deployid", ",".join(old_deploy_list)))
+                    conn.commit()
+                    self.input_tableinfo("kubedeployinfo", cursor, conn)
+
+                # New deploy ID Update
+                try:
+                    cur_dict.execute(stmt.SELECT_DEPLOYINFO_CLUSTERID.format(cluster_id))
+                    result = cur_dict.fetchall()
+                    deploy_query_dict = dict({x["_uid"]:x for x in result})
+                except:
+                    pass            
+            except Exception as e:
+                conn.rollback()
+                self.log.write("GET", f"Kubedeployinfo has an error. Put data process is stopped. - {str(e)}")
+                return False
+
+            # Check StatefulSet info table
+            try:
+                cur_dict.execute(stmt.SELECT_STSINFO_CLUSTERID.format(cluster_id))
+                sts_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+                old_sts_id_list = list(str(x[1]["_stsid"]) for x in old_sts_list.items())
+            except:
+                pass
+
+            try:
+                old_sts_list = dict(filter(lambda x: x[0] not in sts_list, sts_query_dict.items()))
+                new_sts_list = dict(filter(lambda x: x[0] not in sts_query_dict, sts_list.items()))
+
+                # New sts Insertion
+                for new_sts in new_sts_list:
+                    sts_data = dict(new_sts_list[new_sts])
+                    sts_ns_name = sts_data.pop("nsname")
+                    sts_data["nsid"] = namespace_query_dict[sts_ns_name]["_nsid"]
+
+                    column_data = self.insert_columns_ref(schema_obj, "kubestsinfo")
+                    value_data = self.insert_values(list(sts_data.values()))
+                    cursor.execute(stmt.INSERT_TABLE.format("kubestsinfo", column_data, value_data))
+                    conn.commit()
+                    self.input_tableinfo("kubestsinfo", cursor, conn)
+                    #self.log.write("PUT", f"Kubestsinfo insertion is completed - {new_sts}")
+
+                # Old sts Update
+                if len(old_sts_id_list) > 0:
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kubestsinfo", "_stsid", ",".join(old_sts_list)))
+                    conn.commit()
+                    self.input_tableinfo("kubestsinfo", cursor, conn)
+
+                # New sts ID Update
+                try:
+                    cur_dict.execute(stmt.SELECT_STSINFO_CLUSTERID.format(cluster_id))
+                    result = cur_dict.fetchall()
+                    sts_query_dict = dict({x["_uid"]:x for x in result})
+                except:
+                    pass            
+            except Exception as e:
+                conn.rollback()
+                self.log.write("GET", f"Kubestsinfo has an error. Put data process is stopped. - {str(e)}")
+                return False
+
+            # Check Daemonset info table
+            try:
+                cur_dict.execute(stmt.SELECT_DSINFO_CLUSTERID.format(cluster_id))
+                ds_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+            except:
+                pass
+
+            try:
+                old_ds_list = dict(filter(lambda x: x[0] not in ds_list, ds_query_dict.items()))
+                new_ds_list = dict(filter(lambda x: x[0] not in ds_query_dict, ds_list.items()))
+                old_ds_id_list = list(str(x[1]["_dsid"]) for x in old_ds_list.items())
+
+                # New ds Insertion
+                for new_ds in new_ds_list:
+                    ds_data = dict(new_ds_list[new_ds])
+                    ds_ns_name = ds_data.pop("nsname")
+                    ds_data["nsid"] = namespace_query_dict[ds_ns_name]["_nsid"]
+
+                    column_data = self.insert_columns_ref(schema_obj, "kubedsinfo")
+                    value_data = self.insert_values(list(ds_data.values()))
+                    cursor.execute(stmt.INSERT_TABLE.format("kubedsinfo", column_data, value_data))
+                    conn.commit()
+                    self.input_tableinfo("kubedsinfo", cursor, conn)
+                    #self.log.write("PUT", f"Kubedsinfo insertion is completed - {new_ds}")
+
+                # Old ds Update
+                if len(old_ds_id_list) > 0:
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kubedsinfo", "_dsid", ",".join(old_ds_list)))
+                    conn.commit()
+                    self.input_tableinfo("kubedsinfo", cursor, conn)
+
+                # New ds ID Update
+                try:
+                    cur_dict.execute(stmt.SELECT_DSINFO_CLUSTERID.format(cluster_id))
+                    result = cur_dict.fetchall()
+                    ds_query_dict = dict({x["_uid"]:x for x in result})
+                except:
+                    pass
+            except Exception as e:
+                conn.rollback()
+                self.log.write("GET", f"Kubedsinfo has an error. Put data process is stopped. - {str(e)}")
+                return False
+
+            # Check Replicaset info table
+            try:
+                cur_dict.execute(stmt.SELECT_RSINFO_CLUSTERID.format(cluster_id))
+                rs_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+            except:
+                pass
+
+            try:
+                old_rs_list = dict(filter(lambda x: x[0] not in rs_list, rs_query_dict.items()))
+                new_rs_list = dict(filter(lambda x: x[0] not in rs_query_dict, rs_list.items()))
+                old_rs_id_list = list(str(x[1]["_rsid"]) for x in old_rs_list.items())
+
+                # New rs Insertion
+                for new_rs in new_rs_list:
+                    rs_data = dict(new_rs_list[new_rs])
+                    rs_ns_name = rs_data.pop("nsname")
+                    rs_ref_uid = rs_data.pop("refuid")
+                    rs_data["nsid"] = namespace_query_dict[rs_ns_name]["_nsid"]
+
+                    if rs_data["refkind"] == "Deployment":
+                        rs_data["refid"] = deploy_query_dict[rs_ref_uid]["_deployid"]
+                    elif rs_data["rerfid"] == "StatefulSet":
+                        rs_data["refid"] = sts_query_dict[rs_ref_uid]["_stsid"]
+
+                    column_data = self.insert_columns_ref(schema_obj, "kubersinfo")
+                    value_data = self.insert_values(list(rs_data.values()))
+                    cursor.execute(stmt.INSERT_TABLE.format("kubersinfo", column_data, value_data))
+                    conn.commit()
+                    self.input_tableinfo("kubersinfo", cursor, conn)
+                    #self.log.write("PUT", f"Kubersinfo insertion is completed - {new_rs}")
+
+                # Old rs Update
+                if len(old_rs_id_list) > 0:
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kubersinfo", "_rsid", ",".join(old_rs_list)))
+                    conn.commit()
+                    self.input_tableinfo("kubersinfo", cursor, conn)
+
+                # New rs ID Update
+                try:
+                    cur_dict.execute(stmt.SELECT_RSINFO_CLUSTERID.format(cluster_id))
+                    result = cur_dict.fetchall()
+                    rs_query_dict = dict({x["_uid"]:x for x in result})
+                except:
+                    pass
+            except Exception as e:
+                conn.rollback()
+                self.log.write("GET", f"Kubersinfo has an error. Put data process is stopped. - {str(e)}")
+                return False
+
             # Check Podinfo table
             try:
                 cur_dict.execute(stmt.SELECT_PODINFO_CLUSTERID.format(cluster_id))
@@ -761,47 +1111,43 @@ class Engine:
                 pass
 
             try:
-                for pod in pod_list:
-                    pod_data = dict(pod_list[pod])
-                    pod_node_name = pod_data.pop("nodename")
-                    pod_ns_name = pod_data.pop("nsname")
-                    pod_ref_uid = pod_data.pop("uid")
-
-                    pod_data["nodeid"] = node_query_dict[pod_node_name]["_nodeid"]
-                    pod_data["nsid"] = namespace_query_dict[pod_ns_name]["_nsid"]
-                    # Ref 계산은 추후 작성(현 로직보다 앞서 작성해야 하며 쿼리를 다중수행 하지않도록 함)
-
-                    if pod in pod_query_dict:
-                        update_data = self.update_values(schema_obj, "kubepodinfo", pod_list[pod])
-                        cursor.execute(stmt.UPDATE_NODEINFO.format(update_data, pod_query_dict[pod]["_podid"]))
-                        conn.commit()
-                        self.input_tableinfo("kubepodinfo", cursor, conn)
-                        #self.log.write("PUT", f"Kubepodinfo information is updated - {pod}")
-                    
-                    else:
-                        column_data = self.insert_columns_ref(schema_obj, "kubepodinfo")
-                        value_data = self.insert_values(list(pod_data.values()))
-                        cursor.execute(stmt.INSERT_TABLE.format("kubepodinfo", column_data, value_data))
-                        conn.commit()
-                        self.input_tableinfo("kubepodinfo", cursor, conn)
-                        #self.log.write("PUT", f"kubepodinfo insertion is completed - {pod}")
-
                 old_pod_list = dict(filter(lambda x: x[0] not in pod_list, pod_query_dict.items()))
+                new_pod_list = dict(filter(lambda x: x[0] not in pod_query_dict, pod_list.items()))
                 old_pod_id_list = list(str(x[1]["_podid"]) for x in old_pod_list.items())
 
+                # New pod Insertion
+                for new_pod in new_pod_list:
+                    pod_data = dict(new_pod_list[new_pod])
+                    pod_node_name = pod_data.pop("nodename")
+                    pod_ns_name = pod_data.pop("nsname")
+                    pod_ref_uid = pod_data.pop("refuid")
+                    pod_data["nsid"] = namespace_query_dict[pod_ns_name]["_nsid"]
+                    pod_data["nodeid"] = node_query_dict[pod_node_name]["_nodeid"]
 
-                # Old Pod Update
-                if len(old_pod_id_list) > 0:
-                    cursor.execute(stmt.UPDATE_ENABLED.format("kubepodinfo", "_podid", ",".join(old_pod_id_list)))
+                    if pod_data["refkind"] == "DaemonSet":
+                        pod_data["refid"] = ds_query_dict[pod_ref_uid]["_dsid"]
+                    elif pod_data["rerfid"] == "ReplicaSet":
+                        pod_data["refid"] = rs_query_dict[pod_ref_uid]["_rsid"]
+
+
+                    column_data = self.insert_columns_ref(schema_obj, "kubepodinfo")
+                    value_data = self.insert_values(list(pod_data.values()))
+                    cursor.execute(stmt.INSERT_TABLE.format("kubepodinfo", column_data, value_data))
                     conn.commit()
                     self.input_tableinfo("kubepodinfo", cursor, conn)
-                    #self.log.write("PUT", f"Kubepodinfo enabled state is updated - {','.join(old_pod_id_list)}")
+                    #self.log.write("PUT", f"Kubepodinfo insertion is completed - {new_pod}")
 
-                # New Pod info Update
+                # Old pod Update
+                if len(old_pod_id_list) > 0:
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kubepodinfo", "_podid", ",".join(old_pod_list)))
+                    conn.commit()
+                    self.input_tableinfo("kubepodinfo", cursor, conn)
+
+                # New pod ID Update
                 try:
-                    nodeid_data = ",".join(list(str(node_query_dict[x]["_nodeid"]) for x in node_query_dict))
-                    cur_dict.execute(stmt.SELECT_PODINFO_NODEID.format(nodeid_data))
-                    pod_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+                    cur_dict.execute(stmt.SELECT_PODINFO_CLUSTERID.format(cluster_id))
+                    result = cur_dict.fetchall()
+                    pod_query_dict = dict({x["_uid"]:x for x in result})
                 except:
                     pass
             except Exception as e:
@@ -812,6 +1158,71 @@ class Engine:
             if not pod_query_dict:
                 self.log.write("GET", "Kubepodinfo is empty. Put data process is stopped.")
                 return True         # Not False return
+
+            # Check Reference Containers table
+            try:
+                cur_dict.execute(stmt.SELECT_REF_CONTAINERINFO_CLUSTERID.format(cluster_id))
+                ref_container_query = cur_dict.fetchall()
+            except:
+                pass
+
+            try:
+                def rc_exist_condition_new(rc):
+                    return (
+                        rc["kind"] in list(x["_refobjkind"] for x in ref_container_query)
+                        and rc["name"] in list(x["_refcontainername"] for x in ref_container_query)
+                        and rc["image"] in list(x["_image"] for x in ref_container_query)
+                    )
+
+                def rc_exist_condition_old(rc):
+                    return (
+                        rc["_refobjkind"] in list(x["kind"] for x in ref_container_list)
+                        and rc["_refcontainername"] in list(x["name"] for x in ref_container_list)
+                        and rc["_image"] in list(x["image"] for x in ref_container_list)
+                    )
+
+                old_rc_list = dict(filter(lambda x: rc_exist_condition_old(x), ref_container_query))
+                new_rc_list = dict(filter(lambda x: rc_exist_condition_new(x), ref_container_list))
+                old_pod_id_list = list(str(x["_refcontainerid"]) for x in old_rc_list)
+
+                # New rc Insertion
+                for new_rc in new_rc_list:
+                    rc_data = {
+                        "objkind": new_rc["kind"],
+                        "objid": 0,
+                        "clusterid": cluster_id,
+                        "name": new_rc["name"],
+                        "image": new_rc["image"],
+                        "ports": new_rc["ports"],
+                        "env": new_rc["env"],
+                        "resources": new_rc["resources"],
+                        "volumemounts": new_rc["volumemounts"]
+                    }
+                    
+                    column_data = self.insert_columns_ref(schema_obj, "kuberefcontainerinfo")
+                    value_data = self.insert_values(list(svc_data.values()))
+                    cursor.execute(stmt.INSERT_TABLE.format("kuberefcontainerinfo", column_data, value_data))
+                    conn.commit()
+                    self.input_tableinfo("kuberefcontainerinfo", cursor, conn)
+                    #self.log.write("PUT", f"Kubesvcinfo insertion is completed - {new_svc}")
+
+                # Old rc Update
+                if len(old_pod_id_list) > 0:
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kuberefcontainerinfo", "_refcontainerid", ",".join(old_svc_list)))
+                    conn.commit()
+                    self.input_tableinfo("kuberefcontainerinfo", cursor, conn)
+
+                # New SVC ID Update
+                try:
+                    cur_dict.execute(stmt.SELECT_REF_CONTAINERINFO_CLUSTERID.format(cluster_id))
+                    ref_container_query = cur_dict.fetchall()
+                except:
+                    pass
+            except Exception as e:
+                conn.rollback()
+                self.log.write("GET", f"kuberefcontainerinfo has an error. Put data process is stopped. - {str(e)}")
+                return False
+
 
             # Check Container table
             try:
