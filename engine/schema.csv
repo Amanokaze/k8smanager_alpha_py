@@ -47,6 +47,7 @@ reference,kubepodinfo,_podid,serial,NOT NULL,PRIMARY KEY
 reference,kubepodinfo,_nodeid,int8,NOT NULL,
 reference,kubepodinfo,_nsid,int8,NOT NULL,
 reference,kubepodinfo,_uid,text,NOT NULL,
+reference,kubepodinfo,_annotationuid,text,NOT NULL,
 reference,kubepodinfo,_podname,text,NULL,
 reference,kubepodinfo,_starttime,int8,NOT NULL,
 reference,kubepodinfo,_restartpolicy,text,NULL,
@@ -56,6 +57,7 @@ reference,kubepodinfo,_hostip,text,NULL,
 reference,kubepodinfo,_podip,text,NULL,
 reference,kubepodinfo,_restartcount,int8,NULL,
 reference,kubepodinfo,_restarttime,int8,NULL,
+reference,kubepodinfo,_condition,text,NULL,
 reference,kubepodinfo,_refkind,text,NULL,
 reference,kubepodinfo,_refid,int8,NULL,
 reference,kubepodinfo,_enabled,int8,NOT NULL,DEFAULT 0
@@ -64,7 +66,6 @@ reference,kuberefcontainerinfo,_refobjkind,text,NOT NULL,
 reference,kuberefcontainerinfo,_refobjid,int8,NOT NULL,
 reference,kuberefcontainerinfo,_clusterid,int8,NOT NULL,
 reference,kuberefcontainerinfo,_refcontainername,text,NOT NULL,
-reference,kuberefcontainerinfo,_starttime,int8,
 reference,kuberefcontainerinfo,_image,text,NOT NULL,
 reference,kuberefcontainerinfo,_ports,text,NOT NULL,
 reference,kuberefcontainerinfo,_env,text,NOT NULL,
@@ -72,6 +73,7 @@ reference,kuberefcontainerinfo,_resources,text,NOT NULL,
 reference,kuberefcontainerinfo,_volumemounts,text,NOT NULL,
 reference,kuberefcontainerinfo,_enabled,int8,NOT NULL,DEFAULT 0
 reference,kubecontainerinfo,_containerid,serial,NOT NULL,PRIMARY KEY
+reference,kubecontainerinfo,_podid,int8,NOT NULL
 reference,kubecontainerinfo,_containername,text,NOT NULL,
 reference,kubecontainerinfo,_starttime,int8,
 reference,kubepoddeviceinfo,_deviceid,serial,NOT NULL,PRIMARY KEY
