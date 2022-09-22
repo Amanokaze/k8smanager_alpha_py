@@ -76,7 +76,7 @@ class Processing:
         result = cursor.fetchone()
         return result[0]+(result[1]*60) if result else 0
 
-    def get_api_uid(self, metric_uid):
+    def get_api_podid(self, metric_uid):
         podid = 0
         if metric_uid in self.pod_query_dict:
             podid = self.pod_query_dict[metric_uid]["_podid"]
@@ -87,6 +87,16 @@ class Processing:
                 break
 
         return podid
+
+    def get_api_uid(self, metric_uid):
+        if metric_uid in self.pod_query_dict:
+            return metric_uid
+        else:
+            pod_annotation_query_dict = dict(filter(lambda x: x[1]["_annotationuid"] == metric_uid, self.pod_query_dict.items()))
+            for p in pod_annotation_query_dict:
+                return p
+
+            return None
 
     def check_ontune_schema(self):
         # Load onTune Schema
@@ -183,6 +193,8 @@ class Processing:
         with self.db.get_resource_rdb() as (cursor, _, conn):
             self.update_lastrealtimeperf_table(cursor, conn)
             self.update_realtime_table(cursor, conn)
+            self.update_average_table(cursor, conn)
+
 
     def update_manager_info(self, cursor, conn):
         if not self.ref_process_flag:
@@ -692,6 +704,9 @@ class Processing:
                 pod_data["nsid"] = self.namespace_query_dict[pod_ns_name]["_nsid"] if pod_ns_name else 0
                 pod_data["nodeid"] = self.node_query_dict[pod_node_name]["_nodeid"] if pod_node_name else 0
 
+                if pod_data["nodeid"] == 0:
+                    continue
+
                 if pod_data["refkind"] == "DaemonSet":
                     pod_data["refid"] = self.ds_query_dict[pod_ref_uid]["_dsid"]
                 elif pod_data["refkind"] == "ReplicaSet":
@@ -759,7 +774,7 @@ class Processing:
 
             old_rc_list = list(filter(lambda x: rc_exist_condition_old(x), self.ref_container_query))
             new_rc_list = list(filter(lambda x: rc_exist_condition_new(x), self.ref_container_list))
-            old_pod_id_list = list(str(x["_refcontainerid"]) for x in old_rc_list)
+            old_rc_id_list = list(str(x["_refcontainerid"]) for x in old_rc_list)
 
             # New rc Insertion
             for new_rc in new_rc_list:
@@ -797,8 +812,8 @@ class Processing:
                 self.log.write("PUT", f"kuberefcontainerinfo insertion is completed - {new_rc}")
 
             # Old rc Update
-            if len(old_pod_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kuberefcontainerinfo", "_refcontainerid", ",".join(old_pod_id_list)))
+            if len(old_rc_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kuberefcontainerinfo", "_refcontainerid", ",".join(old_rc_id_list)))
                 conn.commit()
                 self.input_tableinfo("kuberefcontainerinfo", cursor, conn)
 
@@ -841,16 +856,15 @@ class Processing:
             except:
                 pass
 
-            # Container 정보는 추가만 되며, 삭제나 enabled를 별도로 설정하지 않음
-            new_container_list = list(filter(lambda x: [x["node"],x["pod"],x["name"]] not in list([y["_nodename"],y["_poduid"],y["_containername"]] for y in container_query_list), container_info))
+            new_container_list = list(filter(lambda x: [x["node"],self.get_api_uid(x["pod"]),x["name"]] not in list([y["_nodename"],y["_poduid"],y["_containername"]] for y in container_query_list), container_info))
 
             for container in new_container_list:
                 # Pod ID는 Stats API에서 조회되는 UID가 Kubernetes API에서는 UID / Annotation - UID 둘 중 하나로 입력되므로 매핑작업이 선행되어야 함
-                podid = self.get_api_uid(container["pod"])
+                podid = self.get_api_podid(self.get_api_uid(container["pod"]))
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubecontainerinfo")
                 value_data = utils.insert_values([podid, container["name"], utils.datetime_to_timestampz(container["starttime"])])
-                self.log.write("88",stmt.INSERT_TABLE.format("kubecontainerinfo", column_data, value_data))
+
                 cursor.execute(stmt.INSERT_TABLE.format("kubecontainerinfo", column_data, value_data))
                 conn.commit()
                 self.input_tableinfo("kubecontainerinfo", cursor, conn)
@@ -915,7 +929,7 @@ class Processing:
 
             device_info_set = dict({x[0]:set(x[1]) for x in device_info.items()})
             new_dev_info_set = dict({x:set(filter(lambda y: y not in list(z[1] for z in deviceinfo_query_list[x]), device_info_set[x])) for x in device_type_set})
-            self.log.write("777",device_info_set)
+
             for devtype in device_type_set:
                 for devinfo in new_dev_info_set[devtype]:
                     column_data = utils.insert_columns_ref(self.schema_obj, "kubepoddeviceinfo")
@@ -1073,7 +1087,7 @@ class Processing:
                 pod_data = self.pod_metric_list[node]
                 for pod in pod_data:
                     uid = pod["podRef"]["uid"]
-                    podid = self.get_api_uid(uid)
+                    podid = self.get_api_podid(uid)
 
                     network_prev_cum_usage = self.system_var.get_network_metric("podperf", podid)
                     network_cum_usage = [
@@ -1144,10 +1158,8 @@ class Processing:
                     # Insert pod device metric data
                     if "network" in pod and "interfaces" in pod["network"]:
                         for pod_network in pod["network"]["interfaces"]:
-                            self.log.write("OD",pod_network)
                             deviceid = list(filter(lambda x: x["_devicename"] == pod_network["name"], list(self.pod_device_query_dict["network"])))[0]["_deviceid"]
                             podnet_key = f"{podid}_{deviceid}"
-                            self.log.write("PP",pod_network)
 
                             network_prev_cum_usage = self.system_var.get_network_metric("podnet", podnet_key)
                             network_cum_usage = [
@@ -1158,7 +1170,6 @@ class Processing:
                                 pod_network["txErrors"]                                                        
                             ]
                             network_usage = list(network_cum_usage[x] - network_prev_cum_usage[x] if network_prev_cum_usage else 0 for x in range(len(network_cum_usage)))
-                            self.log.write("NT",network_usage)
 
                             realtime_podnet = [
                                 podid,
@@ -1166,7 +1177,6 @@ class Processing:
                                 ontunetime,
                                 agenttime
                             ] + network_usage
-                            self.log.write("PN",realtime_podnet)
 
                             self.system_var.set_network_metric("podnet", podnet_key, network_cum_usage)
 
