@@ -1,10 +1,10 @@
 import os
 import threading
 import atexit
-from lib.kubedata import Kubedata
-from lib.processing import Processing
-from lib.db import DB
-from datetime import date, datetime
+from engine.kubedata import Kubedata
+from engine.processing import Processing
+from engine.db import DB
+from datetime import datetime
 from psycopg2 import DatabaseError
 
 LOGFILE_NAME = "manager"

@@ -1,11 +1,11 @@
 import os
 import json
 from kubernetes import client
-from lib import utils
+from engine import utils
 
 DEFAULT_INFO = {
-    "KUBE_HOST": "http://localhost:6443",
-    "KUBE_API_KEY": None,
+    "KUBE_HOST": "http://192.168.0.138:6443",
+    "KUBE_API_KEY": "eyJhbGciOiJSUzI1NiIsImtpZCI6IlRyYzA4SjdEZUloZGM0M0pvODRJOTVqUngzdTB6dzE1RXBGVWQ1NV9qZEkifQ.eyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJrdWJlLXN5c3RlbSIsImt1YmVybmV0ZXMuaW8vc2VydmljZWFjY291bnQvc2VjcmV0Lm5hbWUiOiJhZG1pbi11c2VyLXRva2VuLXFkOGY1Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQubmFtZSI6ImFkbWluLXVzZXIiLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlcnZpY2UtYWNjb3VudC51aWQiOiIyYTJmYWMzZi1kOWQxLTQ3MmUtODdmMi0xYjNmZDQ5ZjQxMTEiLCJzdWIiOiJzeXN0ZW06c2VydmljZWFjY291bnQ6a3ViZS1zeXN0ZW06YWRtaW4tdXNlciJ9.HygvQ7eaenNsMiohsR4rButEQjwecXFF_9OwrKQI_yMN1DeMuFqtRq0jk_-bvaY8kT3AXY2uekkIpXusw5C1D0KX-WDUpfVRa7OO53JEbTfJBE-Ki4md3v7aJTni_lyORJoZ45ziKbofc2z0_g87e3U2xeJtVOFZTdjniIMFCHkgl8qF2wDK5MN0WapGbnt8tj3nxdn4vlnK8fpp66GkvQ8-x3TFOdD-koqVl5JGg9Q-K72V_fCFplcyBUcaogBNUCXLpf2Ck4i-kUtTDouWKmw8klqXCbCCVotTHQk13A4EFA-0n9Gm-ihW-3ANuNP9t3F_ZJqz8FRxjEuUIlI7nw",
     "KUBE_MGR_ST_INTERVAL": 10,
     "KUBE_MGR_LT_INTERVAL": 600,
     "KUBE_CLUSTER_NAME": "kubernetes",
@@ -47,23 +47,26 @@ class Kubedata:
         self.cfg.ssl_ca_cert = 'ca.crt'
 
     def get_stats_api(self):
-        self.api_version_info = client.CoreApi(client.ApiClient(self.cfg)).get_api_versions()
-        self.cluster_address = self.api_version_info.server_address_by_client_cid_rs[0].server_address.split(":")[0]
+        try:
+            self.api_version_info = client.CoreApi(client.ApiClient(self.cfg)).get_api_versions()
+            self.cluster_address = self.api_version_info.server_address_by_client_cid_rs[0].server_address.split(":")[0]
 
-        core_api = client.CoreV1Api(client.ApiClient(self.cfg))
-        apps_api = client.AppsV1Api(client.ApiClient(self.cfg))
+            core_api = client.CoreV1Api(client.ApiClient(self.cfg))
+            apps_api = client.AppsV1Api(client.ApiClient(self.cfg))
+            
+            self.get_kube_ns_data(core_api)
+            self.get_kube_node_data(core_api)
+            self.get_kube_pod_data(core_api)
+            self.get_kube_svc_data(core_api)
+            self.get_kube_ds_data(apps_api)
+            self.get_kube_rs_data(apps_api)
+            self.get_kube_deploy_data(apps_api)
+            self.get_kube_sts_data(apps_api)
 
-        self.get_kube_ns_data(core_api)
-        self.get_kube_node_data(core_api)
-        self.get_kube_pod_data(core_api)
-        self.get_kube_svc_data(core_api)
-        self.get_kube_ds_data(apps_api)
-        self.get_kube_rs_data(apps_api)
-        self.get_kube_deploy_data(apps_api)
-        self.get_kube_sts_data(apps_api)
-
-        if self.node_data and self.ns_data:
-            self.data_exist = True
+            if self.node_data and self.ns_data:
+                self.data_exist = True
+        except Exception as e:
+            self.log.write('ERR', str(e))
 
     def get_kube_node_data(self, api):
         try:

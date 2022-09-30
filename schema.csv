@@ -7,16 +7,22 @@ reference,kubemanagerinfo,_managerid,serial,NOT NULL,PRIMARY KEY
 reference,kubemanagerinfo,_managername,text,NOT NULL,
 reference,kubemanagerinfo,_desc,text,NULL,
 reference,kubemanagerinfo,_ip,text,NOT NULL,
+reference,kubemanagerinfo,_createdtime,int8,NOT NULL,
+reference,kubemanagerinfo,_updatetime,int8,NOT NULL,
 reference,kubeclusterinfo,_clusterid,serial,NOT NULL,PRIMARY KEY
 reference,kubeclusterinfo,_managerid,int8,NOT NULL,
 reference,kubeclusterinfo,_clustername,text,NOT NULL,
 reference,kubeclusterinfo,_desc,text,NULL,
 reference,kubeclusterinfo,_ip,text,NOT NULL,
+reference,kubeclusterinfo,_createdtime,int8,NOT NULL,
+reference,kubeclusterinfo,_updatetime,int8,NOT NULL,
 reference,kubensinfo,_nsid,serial,NOT NULL,PRIMARY KEY
 reference,kubensinfo,_clusterid,int8,NOT NULL,
 reference,kubensinfo,_nsname,text,NOT NULL,
 reference,kubensinfo,_status,text,NULL
 reference,kubensinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubensinfo,_createdtime,int8,NOT NULL,
+reference,kubensinfo,_updatetime,int8,NOT NULL,
 reference,kubenodeinfo,_nodeid,serial,NOT NULL,PRIMARY KEY
 reference,kubenodeinfo,_managerid,int8,NOT NULL,
 reference,kubenodeinfo,_clusterid,int8,NOT NULL,
@@ -39,10 +45,14 @@ reference,kubenodeinfo,_ephemeralstorage,int8,NULL,
 reference,kubenodeinfo,_memorysize,int8,NULL,
 reference,kubenodeinfo,_pods,int8,NULL,
 reference,kubenodeinfo,_ip,text,NULL,
+reference,kubenodeinfo,_createdtime,int8,NOT NULL,
+reference,kubenodeinfo,_updatetime,int8,NOT NULL,
 reference,kubenodesyscoinfo,_syscontainerid,serial,NOT NULL,PRIMARY KEY
 reference,kubenodesyscoinfo,_nodeid,int8,NOT NULL,
 reference,kubenodesyscoinfo,_containername,text,NOT NULL,
 reference,kubenodesyscoinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubenodesyscoinfo,_createdtime,int8,NOT NULL,
+reference,kubenodesyscoinfo,_updatetime,int8,NOT NULL,
 reference,kubepodinfo,_podid,serial,NOT NULL,PRIMARY KEY
 reference,kubepodinfo,_nodeid,int8,NOT NULL,
 reference,kubepodinfo,_nsid,int8,NOT NULL,
@@ -61,24 +71,34 @@ reference,kubepodinfo,_condition,text,NULL,
 reference,kubepodinfo,_refkind,text,NULL,
 reference,kubepodinfo,_refid,int8,NULL,
 reference,kubepodinfo,_enabled,int8,NOT NULL,DEFAULT 0
-reference,kuberefcontainerinfo,_refcontainerid,serial,NOT NULL,PRIMARY KEY
-reference,kuberefcontainerinfo,_refobjkind,text,NOT NULL,
-reference,kuberefcontainerinfo,_refobjid,int8,NOT NULL,
-reference,kuberefcontainerinfo,_clusterid,int8,NOT NULL,
-reference,kuberefcontainerinfo,_refcontainername,text,NOT NULL,
-reference,kuberefcontainerinfo,_image,text,NOT NULL,
-reference,kuberefcontainerinfo,_ports,text,NOT NULL,
-reference,kuberefcontainerinfo,_env,text,NOT NULL,
-reference,kuberefcontainerinfo,_resources,text,NOT NULL,
-reference,kuberefcontainerinfo,_volumemounts,text,NOT NULL,
-reference,kuberefcontainerinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubepodinfo,_createdtime,int8,NOT NULL,
+reference,kubepodinfo,_updatetime,int8,NOT NULL,
 reference,kubecontainerinfo,_containerid,serial,NOT NULL,PRIMARY KEY
 reference,kubecontainerinfo,_podid,int8,NOT NULL
 reference,kubecontainerinfo,_containername,text,NOT NULL,
 reference,kubecontainerinfo,_starttime,int8,
+reference,kubecontainerinfo,_image,text,NOT NULL,
+reference,kubecontainerinfo,_ports,text,NOT NULL,
+reference,kubecontainerinfo,_env,text,NOT NULL,
+reference,kubecontainerinfo,_resources,text,NOT NULL,
+reference,kubecontainerinfo,_volumemounts,text,NOT NULL,
+reference,kubecontainerinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubecontainerinfo,_createdtime,int8,NOT NULL,
+reference,kubecontainerinfo,_updatetime,int8,NOT NULL,
 reference,kubepoddeviceinfo,_deviceid,serial,NOT NULL,PRIMARY KEY
 reference,kubepoddeviceinfo,_devicename,text,NOT NULL,
 reference,kubepoddeviceinfo,_devicetype,text,NOT NULL,
+reference,kubecontainerinfo,_createdtime,int8,NOT NULL,
+reference,kubecontainerinfo,_updatetime,int8,NOT NULL,
+reference,kubeinginfo,_ingid,serial,NOT NULL,PRIMARY KEY
+reference,kubeinginfo,_nsid,int8,NOT NULL
+reference,kubeinginfo,_ingname,text,NOT NULL
+reference,kubeinginfo,_uid,text,NOT NULL
+reference,kubeinginfo,_starttime,int8,NOT NULL
+reference,kubeinginfo,_classname,text,NULL
+reference,kubeinginfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubeinginfo,_createdtime,int8,NOT NULL,
+reference,kubeinginfo,_updatetime,int8,NOT NULL,
 reference,kubesvcinfo,_svdid,serial,NOT NULL,PRIMARY KEY
 reference,kubesvcinfo,_nsid,int8,NOT NULL
 reference,kubesvcinfo,_svcname,text,NOT NULL
@@ -87,8 +107,9 @@ reference,kubesvcinfo,_starttime,int8,NOT NULL
 reference,kubesvcinfo,_servicetype,text,NULL
 reference,kubesvcinfo,_clusterip,text,NULL
 reference,kubesvcinfo,_ports,text,NULL
-reference,kubesvcinfo,_selector,text,NULL
 reference,kubesvcinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubesvcinfo,_createdtime,int8,NOT NULL,
+reference,kubesvcinfo,_updatetime,int8,NOT NULL,
 reference,kubedeployinfo,_deployid,serial,NOT NULL,PRIMARY KEY
 reference,kubedeployinfo,_nsid,int8,NOT NULL
 reference,kubedeployinfo,_dsname,text,NOT NULL
@@ -100,8 +121,9 @@ reference,kubedeployinfo,_updatedrs,int8,DEFAULT 0
 reference,kubedeployinfo,_readyrs,int8,DEFAULT 0
 reference,kubedeployinfo,_availablers,int8,DEFAULT 0
 reference,kubedeployinfo,_observedgen,int8,DEFAULT 0
-reference,kubedeployinfo,_selector,text,NULL
 reference,kubedeployinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubedeployinfo,_createdtime,int8,NOT NULL,
+reference,kubedeployinfo,_updatetime,int8,NOT NULL,
 reference,kubestsinfo,_stsid,serial,NOT NULL,PRIMARY KEY
 reference,kubestsinfo,_nsid,int8,NOT NULL
 reference,kubestsinfo,_stsname,text,NOT NULL
@@ -111,8 +133,9 @@ reference,kubestsinfo,_serviceaccount,text,NULL
 reference,kubestsinfo,_replicas,int8,DEFAULT 0
 reference,kubestsinfo,_readyrs,int8,DEFAULT 0
 reference,kubestsinfo,_availablers,int8,DEFAULT 0
-reference,kubestsinfo,_selector,text,NULL
 reference,kubestsinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubestsinfo,_createdtime,int8,NOT NULL,
+reference,kubestsinfo,_updatetime,int8,NOT NULL,
 reference,kubedsinfo,_dsid,serial,NOT NULL,PRIMARY KEY
 reference,kubedsinfo,_nsid,int8,NOT NULL
 reference,kubedsinfo,_dsname,text,NOT NULL
@@ -124,8 +147,9 @@ reference,kubedsinfo,_desired,int8,DEFAULT 0
 reference,kubedsinfo,_ready,int8,DEFAULT 0
 reference,kubedsinfo,_updated,int8,DEFAULT 0
 reference,kubedsinfo,_available,int8,DEFAULT 0
-reference,kubedsinfo,_selector,text,NULL
 reference,kubedsinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubedsinfo,_createdtime,int8,NOT NULL,
+reference,kubedsinfo,_updatetime,int8,NOT NULL,
 reference,kubersinfo,_rsid,serial,NOT NULL,PRIMARY KEY
 reference,kubersinfo,_nsid,int8,NOT NULL
 reference,kubersinfo,_rsname,text,NOT NULL
@@ -136,10 +160,29 @@ reference,kubersinfo,_fullylabeledrs,int8,DEFAULT 0
 reference,kubersinfo,_readyrs,int8,DEFAULT 0
 reference,kubersinfo,_availablers,int8,DEFAULT 0
 reference,kubersinfo,_observedgen,int8,DEFAULT 0
-reference,kubersinfo,_selector,text,NULL
 reference,kubersinfo,_refkind,text,NULL,
 reference,kubersinfo,_refid,int8,NULL,
 reference,kubersinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubersinfo,_createdtime,int8,NOT NULL,
+reference,kubersinfo,_updatetime,int8,NOT NULL,
+reference,kubeselectorinfo,_selectorid,serial,NOT NULL,PRIMARY KEY
+reference,kubeselectorinfo,_kind,text,NOT NULL
+reference,kubeselectorinfo,_kindid,int8,NOT NULL
+reference,kubeselectorinfo,_lbvalueid,int8,NOT NULL
+reference,kubeselectorinfo,_createdtime,int8,NOT NULL,
+reference,kubeselectorinfo,_updatetime,int8,NOT NULL,
+reference,kubelabelinfo,_labelid,serial,NOT NULL,PRIMARY KEY
+reference,kubelabelinfo,_kind,text,NOT NULL
+reference,kubelabelinfo,_kindid,int8,NOT NULL
+reference,kubelabelinfo,_lbvalueid,int8,NOT NULL
+reference,kubelabelinfo,_createdtime,int8,NOT NULL,
+reference,kubelabelinfo,_updatetime,int8,NOT NULL,
+reference,kubelabelvalueinfo,_lbvalueid,serial,NOT NULL,PRIMARY KEY
+reference,kubelabelvalueinfo,_keyvalue,int8,NOT NULL
+reference,kubelabelvalueinfo,_key,int8,NOT NULL
+reference,kubelabelvalueinfo,_value,text,NOT NULL
+reference,kubelabelvalueinfo,_createdtime,int8,NOT NULL,
+reference,kubelabelvalueinfo,_updatetime,int8,NOT NULL,
 reference,kubelastrealtimeperf,_nodeid,serial,NOT NULL,PRIMARY KEY
 reference,kubelastrealtimeperf,_ontunetime,int8,NOT NULL,
 reference,kubelastrealtimeperf,_cpuusage,int8,NULL,

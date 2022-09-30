@@ -1,4 +1,5 @@
 __pycache__/
+.vscode/
 .scannerwork/
 engine/__pycache__/
 engine/*.log
@@ -7,5 +8,7 @@ engine/*.sql
 okm_venv/
 result/
 old/
-viewer_old/
+build/
+dist/
 *.bat
+*.log
