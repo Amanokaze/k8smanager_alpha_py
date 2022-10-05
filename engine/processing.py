@@ -1139,7 +1139,6 @@ class Processing:
 
                     # Insert pod container metric data
                     for pod_container in pod["containers"]:
-                        self.log.write("DEBUG",self.container_query_dict)
                         realtime_containerperf = [
                             self.container_query_dict[f"{self.get_api_uid(uid)}/{pod_container['name']}"]["_containerid"],
                             ontunetime,
