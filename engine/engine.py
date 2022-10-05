@@ -82,7 +82,7 @@ class Engine:
         self.system_var.refresh_duration(self.kubedata.st_interval)
         
         # Stats API를 사용해서 데이터를 가져오는 부분
-        self.kubedata.get_stats_api()
+        self.kubedata.get_api()
 
         # API 기본 정보를 가져오는 부분
         kube_basic_info = {

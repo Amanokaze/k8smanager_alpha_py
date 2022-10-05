@@ -76,7 +76,6 @@ reference,kubepodinfo,_updatetime,int8,NOT NULL,
 reference,kubecontainerinfo,_containerid,serial,NOT NULL,PRIMARY KEY
 reference,kubecontainerinfo,_podid,int8,NOT NULL
 reference,kubecontainerinfo,_containername,text,NOT NULL,
-reference,kubecontainerinfo,_starttime,int8,
 reference,kubecontainerinfo,_image,text,NOT NULL,
 reference,kubecontainerinfo,_ports,text,NOT NULL,
 reference,kubecontainerinfo,_env,text,NOT NULL,
@@ -88,8 +87,8 @@ reference,kubecontainerinfo,_updatetime,int8,NOT NULL,
 reference,kubepoddeviceinfo,_deviceid,serial,NOT NULL,PRIMARY KEY
 reference,kubepoddeviceinfo,_devicename,text,NOT NULL,
 reference,kubepoddeviceinfo,_devicetype,text,NOT NULL,
-reference,kubecontainerinfo,_createdtime,int8,NOT NULL,
-reference,kubecontainerinfo,_updatetime,int8,NOT NULL,
+reference,kubepoddeviceinfo,_createdtime,int8,NOT NULL,
+reference,kubepoddeviceinfo,_updatetime,int8,NOT NULL,
 reference,kubeinginfo,_ingid,serial,NOT NULL,PRIMARY KEY
 reference,kubeinginfo,_nsid,int8,NOT NULL
 reference,kubeinginfo,_ingname,text,NOT NULL

@@ -10,8 +10,8 @@ INSERT_TABLEINFO = "insert into kubetableinfo values ('{1}', 0, {0}, {0}, 0);"
 
 INSERT_TABLE = "insert into {} ({}) values ({});"
 SELECT_TABLE = "select {} from {} where {} {};"
-UPDATE_TABLE = "update {} set {} where {}={};"
-UPDATE_ENABLED = "update {} set _enabled=0 where {} in ({});"
+UPDATE_TABLE = "update {0} set {1}, _updatetime={4} where {2}={3};"
+UPDATE_ENABLED = "update {0} set _enabled=0 and _updatetime={3} where {1} in ({2});"
 
 DELETE_LASTREALTIMEPERF = "delete from kubelastrealtimeperf where _nodeid={};"
 
@@ -28,6 +28,7 @@ SELECT_DSINFO_CLUSTERID = "select ds.* from kubedsinfo ds, kubensinfo ns where n
 SELECT_RSINFO_CLUSTERID = "select rs.* from kubersinfo rs, kubensinfo ns where ns._nsid=rs._nsid and ns._clusterid={} and rs._enabled=1;"
 SELECT_PODINFO_CLUSTERID = "select p.* from kubepodinfo p, kubenodeinfo n where p._nodeid = n._nodeid and n._clusterid={} and n._enabled=1 and p._enabled=1;"
 SELECT_PODINFO_NODEID = "select * from kubepodinfo where _nodeid in ({}) and _enabled=1;"
+SELECT_CONTAINERINFO_CLUSTERID = "select c.*, p._uid as _poduid from kubecontainerinfo c, kubepodinfo p, kubenodeinfo n where c._podid=p._podid and p._nodeid=n._nodeid and n._clusterid={} and n._enabled=1 and p._enabled=1 and c._enabled=1 order by p._podid, c._containername;"
 SELECT_CONTAINERINFO_NODEID = "select c.*, p._uid as _poduid, n._nodename from kubecontainerinfo c, kubepodinfo p, kubenodeinfo n where c._podid=p._podid and p._nodeid=n._nodeid and p._enabled=1 and p._nodeid in ({});"
 SELECT_PODDEVICEINFO_DEVICETYPE = "select * from kubepoddeviceinfo where _devicetype='{}';"
 

@@ -30,7 +30,7 @@ def dict_to_str(data):
     return ",".join(list(f"{k}={v}" for (k,v) in data.items())) if data else ""
 
 def dict_port_to_str(ports):
-    return ",".join(list(f"{x.port}" + "" if x.port == x.target_port else f":{x.target_port}" + f"/{x.protocol}" for x in ports)) if ports else ""
+    return ",".join(list(f"{x.name}:{x.node_port}/{x.protocol}/{x.port}:{x.target_port}" for x in ports)) if ports else ""
 
 def insert_columns_ref(schema, obj_name):
     return ",".join(list(y[0] for y in list(filter(lambda x: 'PRIMARY KEY' not in x, schema["reference"][obj_name]))))

@@ -9,8 +9,7 @@ class Processing:
         # Pre-define data (여기에서의 Key는 Primary와 같은 Key값이 아니라 dictionary의 key-value의 key를 뜻함)
         self.manager_id = 0
         self.cluster_id = 0
-        self.ref_container_list = list()
-        self.ref_container_query = list()
+        self.container_list = list()
 
         self.namespace_query_dict = dict()       # Key: UID
         self.svc_query_dict = dict()             # Key: UID
@@ -21,7 +20,7 @@ class Processing:
         self.node_query_dict = dict()            # Key: Nodename
         self.node_sysco_query_dict = dict()      # Key: Nodeid
         self.pod_query_dict = dict()             # Key: UID
-        self.pod_container_query_dict = dict()   # Key: Podid
+        self.container_query_dict = dict()       # Key: Pod UID
         self.pod_device_query_dict = dict()      # Key: Devicetype
 
         self.log = log
@@ -34,6 +33,13 @@ class Processing:
             "index": dict()
         }
 
+    # 해야 할 일 알려줌
+    # 1.RefContainer 관련 부분 삭제
+    # 2.PodContainer 전원 Insert 
+    # 3.Ingress 구현
+    # 4.Label-Selector 관련 Logic 구현
+    # 5. Updatetime 구혀ㅛㄴ
+    # 6. 현
     def set_kube_data(self, kubedata, basic_info):
         # Kube Data variables
         self.namespace_list = kubedata.ns_data
@@ -177,15 +183,12 @@ class Processing:
             self.update_namespace_info(cursor, cur_dict, conn)
             self.update_node_info(cursor, cur_dict, conn)
             self.update_node_systemcontainer_info(cursor, cur_dict, conn)
-            self.set_ref_container_list()
             self.update_service_info(cursor, cur_dict, conn)
             self.update_deployment_info(cursor, cur_dict, conn)
             self.update_statefulset_info(cursor, cur_dict, conn)
             self.update_daemonset_info(cursor, cur_dict, conn)
             self.update_replicaset_info(cursor, cur_dict, conn)
-            self.update_pod_info(cursor, cur_dict, conn)
-            self.update_ref_container_info(cursor, cur_dict, conn)
-            self.update_pod_container_info(cursor, cur_dict, conn)
+            self.update_pod_and_container_info(cursor, cur_dict, conn)
             self.update_pod_device_info(cursor, cur_dict, conn)
 
     def update_metric_tables(self):
@@ -199,13 +202,15 @@ class Processing:
         if not self.ref_process_flag:
             return False
 
+        ontunetime = self.get_ontunetime(cursor)
+        
         try:
             cursor.execute(stmt.SELECT_MANAGERINFO_IP.format(self.manager_ip))
             result = cursor.fetchone()
             self.manager_id = result[0]
         except:            
             column_data = utils.insert_columns_ref(self.schema_obj, "kubemanagerinfo")
-            value_data = utils.insert_values([self.manager_name, self.manager_name, self.manager_ip])
+            value_data = utils.insert_values([self.manager_name, self.manager_name, self.manager_ip, ontunetime, ontunetime])
             cursor.execute(stmt.INSERT_TABLE.format("kubemanagerinfo", column_data, value_data))
             conn.commit()
             self.input_tableinfo("kubemanagerinfo", cursor, conn)
@@ -216,12 +221,14 @@ class Processing:
             self.manager_id = result[0]
 
         if not self.manager_id:
-            self.log.write("GET", "Kubemanagerinfo has an error. Put data process is stopped.")
+            self.log.write("ERROR", "Kubemanagerinfo has an error. Put data process is stopped.")
             self.ref_process_flag = False
 
     def update_cluster_info(self, cursor, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             cursor.execute(stmt.SELECT_CLUSTERINFO_IP_MGRID.format(self.cluster_address, self.manager_id))
@@ -229,7 +236,7 @@ class Processing:
             self.cluster_id = result[0]
         except:
             column_data = utils.insert_columns_ref(self.schema_obj, "kubeclusterinfo")
-            value_data = utils.insert_values([self.manager_id, self.cluster_name, self.cluster_name, self.cluster_address])
+            value_data = utils.insert_values([self.manager_id, self.cluster_name, self.cluster_name, self.cluster_address, ontunetime, ontunetime])
             cursor.execute(stmt.INSERT_TABLE.format("kubeclusterinfo", column_data, value_data))
             conn.commit()
             self.input_tableinfo("kubeclusterinfo", cursor, conn)
@@ -240,12 +247,14 @@ class Processing:
             self.cluster_id = result[0]
 
         if not self.cluster_id:
-            self.log.write("GET", "Kubeclusterinfo has an error. Put data process is stopped.")
+            self.log.write("ERROR", "Kubeclusterinfo has an error. Put data process is stopped.")
             self.ref_process_flag = False
 
     def update_namespace_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:       
             cur_dict.execute(stmt.SELECT_NAMESPACEINFO_CLUSTERID.format(self.cluster_id))
@@ -261,7 +270,7 @@ class Processing:
             # New Namespace Insertion
             for new_ns in new_namespace_list:
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubensinfo")
-                value_data = utils.insert_values([self.cluster_id, new_ns['name'], new_ns['status'], 1])
+                value_data = utils.insert_values([self.cluster_id, new_ns['name'], new_ns['status'], 1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubensinfo", column_data, value_data))
                 conn.commit()
                 self.input_tableinfo("kubensinfo", cursor, conn)
@@ -269,7 +278,7 @@ class Processing:
 
             # Old Namespace Update
             if len(old_ns_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubensinfo", "_nsid", ",".join(old_ns_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubensinfo", "_nsid", ",".join(old_ns_id_list), ontunetime)) 
                 conn.commit()
                 self.input_tableinfo("kubensinfo", cursor, conn)
 
@@ -282,12 +291,14 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubenamespaceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubenamespaceinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_node_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             cur_dict.execute(stmt.SELECT_NODEINFO_CLUSTERID.format(self.cluster_id))
@@ -301,7 +312,7 @@ class Processing:
             for node in self.node_list:
                 if node in node_query_dict:
                     if self.node_list[node]["uid"] != node_query_dict[node]["_nodeuid"]:
-                        update_data = utils.update_values(self.schema_obj, "kubenodeinfo", self.node_list[node])
+                        update_data = utils.update_values(self.schema_obj, "kubenodeinfo", self.node_list[node], ontunetime)
                         cursor.execute(stmt.UPDATE_TABLE.format("kubenodeinfo", update_data, "_nodeid", node_query_dict[node]["_nodeid"]))
                         conn.commit()
                         self.input_tableinfo("kubenodeinfo", cursor, conn)
@@ -309,7 +320,7 @@ class Processing:
 
                 else:
                     column_data = utils.insert_columns_ref(self.schema_obj, "kubenodeinfo")
-                    value_data = utils.insert_values([self.manager_id, self.cluster_id] + list(self.node_list[node].values()))
+                    value_data = utils.insert_values([self.manager_id, self.cluster_id] + list(self.node_list[node].values()) + [ontunetime, ontunetime])
                     cursor.execute(stmt.INSERT_TABLE.format("kubenodeinfo", column_data, value_data))
                     conn.commit()
                     self.input_tableinfo("kubenodeinfo", cursor, conn)
@@ -320,7 +331,7 @@ class Processing:
 
             # Old Node Update
             if len(old_node_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubenodeinfo", "_nodeid", ",".join(old_node_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubenodeinfo", "_nodeid", ",".join(old_node_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubenodeinfo", cursor, conn)
                 self.log.write("PUT", f"Kubenodeinfo enabled state is updated - {','.join(old_node_id_list)}")
@@ -334,7 +345,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubenodeinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubenodeinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
         if not self.node_query_dict:
@@ -344,6 +355,8 @@ class Processing:
     def update_node_systemcontainer_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             syscontainer_info_dict = dict({x[0]:list(y["name"] for y in x[1]["systemContainers"]) for x in self.node_metric_list.items()})
@@ -366,7 +379,7 @@ class Processing:
             for sysco in new_node_sysco_list:
                 nodeid = self.node_query_dict[sysco["nodename"]]["_nodeid"]
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubenodesyscoinfo")
-                value_data = utils.insert_values([nodeid, sysco["containername"], 1])
+                value_data = utils.insert_values([nodeid, sysco["containername"], 1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubenodesyscoinfo", column_data, value_data))
                 conn.commit()
                 self.input_tableinfo("kubenodesyscoinfo", cursor, conn)
@@ -376,7 +389,7 @@ class Processing:
                 old_node_sysco_id_list = list(str(x["_syscontainerid"]) for x in old_node_sysco_list)
 
                 if len(old_node_sysco_id_list) > 0:
-                    cursor.execute(stmt.UPDATE_ENABLED.format("kubenodesyscoinfo","_syscontainerid",",".join(old_node_sysco_id_list)))
+                    cursor.execute(stmt.UPDATE_ENABLED.format("kubenodesyscoinfo","_syscontainerid",",".join(old_node_sysco_id_list), ontunetime))
                     conn.commit()
                     self.input_tableinfo("kubenodesyscoinfo", cursor, conn)
                     self.log.write("PUT", f"Kubenodesyscoinfo enabled state is updated - {','.join(self.old_node_id_list)}")
@@ -397,51 +410,14 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubenodesystemcontainer info has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubenodesystemcontainer info has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
-
-    def set_ref_container_list(self):
-        if not self.ref_process_flag:
-            return False
-
-        pod_container_list = list()
-        for pod in self.pod_list:
-            pod_containers = self.pod_list[pod].pop("containers")                
-            pod_container_list.extend(pod_containers)
-        pod_container_refined_list = list(map(dict, OrderedDict.fromkeys(tuple(sorted(x.items())) for x in pod_container_list)))
-        self.ref_container_list.extend(pod_container_refined_list)
-
-        deploy_container_list = list()
-        for deploy in self.deploy_list:
-            deploy_containers = self.deploy_list[deploy].pop("containers")
-            deploy_container_list.extend(deploy_containers)
-        deploy_container_refined_list = list(map(dict, OrderedDict.fromkeys(tuple(sorted(x.items())) for x in deploy_container_list)))
-        self.ref_container_list.extend(deploy_container_refined_list)
-
-        sts_container_list = list()
-        for sts in self.sts_list:
-            sts_containers = self.sts_list[sts].pop("containers")
-            sts_container_list.extend(sts_containers)
-        sts_container_refined_list = list(map(dict, OrderedDict.fromkeys(tuple(sorted(x.items())) for x in sts_container_list)))
-        self.ref_container_list.extend(sts_container_refined_list)
-
-        ds_container_list = list()
-        for ds in self.ds_list:
-            ds_containers = self.ds_list[ds].pop("containers")
-            ds_container_list.extend(ds_containers)
-        ds_container_refined_list = list(map(dict, OrderedDict.fromkeys(tuple(sorted(x.items())) for x in ds_container_list)))
-        self.ref_container_list.extend(ds_container_refined_list)
-
-        rs_container_list = list()
-        for rs in self.rs_list:
-            rs_containers = self.rs_list[rs].pop("containers")
-            rs_container_list.extend(rs_containers)
-        rs_container_refined_list = list(map(dict, OrderedDict.fromkeys(tuple(sorted(x.items())) for x in rs_container_list)))
-        self.ref_container_list.extend(rs_container_refined_list)
 
     def update_service_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             cur_dict.execute(stmt.SELECT_SVCINFO_CLUSTERID.format(self.cluster_id))
@@ -457,10 +433,15 @@ class Processing:
             # New SVC Insertion
             for new_svc in new_svc_list:
                 svc_data = dict(new_svc_list[new_svc])
-                svc_ns_name = svc_data.pop("nsname")
+
+                svc_ns_name = svc_data.pop("nsname")                
                 svc_data["nsid"] = self.namespace_query_dict[svc_ns_name]["_nsid"]
+
+                svc_selector = svc_data.pop("selector")
+                svc_labels = svc_data.pop("label")
+
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubesvcinfo")
-                value_data = utils.insert_values(list(svc_data.values())+[1])
+                value_data = utils.insert_values(list(svc_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubesvcinfo", column_data, value_data))
                 conn.commit()
                 self.input_tableinfo("kubesvcinfo", cursor, conn)
@@ -468,7 +449,7 @@ class Processing:
 
             # Old SVC Update
             if len(old_svc_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubesvcinfo", "_svcid", ",".join(old_svc_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubesvcinfo", "_svcid", ",".join(old_svc_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubesvcinfo", cursor, conn)
 
@@ -481,12 +462,14 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubesvcinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubesvcinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_deployment_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False            
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             cur_dict.execute(stmt.SELECT_DEPLOYINFO_CLUSTERID.format(self.cluster_id))
@@ -502,11 +485,15 @@ class Processing:
             # New deploy Insertion
             for new_deploy in new_deploy_list:
                 deploy_data = dict(new_deploy_list[new_deploy])
+
                 deploy_ns_name = deploy_data.pop("nsname")
                 deploy_data["nsid"] = self.namespace_query_dict[deploy_ns_name]["_nsid"]
 
+                deploy_selector = deploy_data.pop("selector")
+                deploy_labels = deploy_data.pop("label")
+
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubedeployinfo")
-                value_data = utils.insert_values(list(deploy_data.values())+[1])
+                value_data = utils.insert_values(list(deploy_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubedeployinfo", column_data, value_data))
                 conn.commit()
 
@@ -515,7 +502,7 @@ class Processing:
 
             # Old deploy Update
             if len(old_deploy_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubedeployinfo", "_deployid", ",".join(old_deploy_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubedeployinfo", "_deployid", ",".join(old_deploy_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubedeployinfo", cursor, conn)
 
@@ -528,12 +515,14 @@ class Processing:
                 pass            
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubedeployinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubedeployinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_statefulset_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             cur_dict.execute(stmt.SELECT_STSINFO_CLUSTERID.format(self.cluster_id))
@@ -551,11 +540,15 @@ class Processing:
             # 오류:  현재 트랜잭션은 중지되어 있습니다. 이 트랜잭션을 종료하기 전까지는 모든 명령이 무시될 것입니다
             for new_sts in new_sts_list:
                 sts_data = dict(new_sts_list[new_sts])
+
                 sts_ns_name = sts_data.pop("nsname")
                 sts_data["nsid"] = self.namespace_query_dict[sts_ns_name]["_nsid"]
 
+                sts_selector = sts_data.pop("selector")
+                sts_labels = sts_data.pop("label")
+
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubestsinfo")
-                value_data = utils.insert_values(list(sts_data.values())+[1])
+                value_data = utils.insert_values(list(sts_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubestsinfo", column_data, value_data))
                 conn.commit()
 
@@ -564,7 +557,7 @@ class Processing:
 
             # Old sts Update
             if len(old_sts_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubestsinfo", "_stsid", ",".join(old_sts_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubestsinfo", "_stsid", ",".join(old_sts_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubestsinfo", cursor, conn)
 
@@ -577,12 +570,14 @@ class Processing:
                 pass            
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubestsinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubestsinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_daemonset_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             cur_dict.execute(stmt.SELECT_DSINFO_CLUSTERID.format(self.cluster_id))
@@ -598,11 +593,15 @@ class Processing:
             # New ds Insertion
             for new_ds in new_ds_list:
                 ds_data = dict(new_ds_list[new_ds])
+
                 ds_ns_name = ds_data.pop("nsname")
                 ds_data["nsid"] = self.namespace_query_dict[ds_ns_name]["_nsid"]
 
+                ds_selector = ds_data.pop("selector")
+                ds_labels = ds_data.pop("label")
+
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubedsinfo")
-                value_data = utils.insert_values(list(ds_data.values())+[1])
+                value_data = utils.insert_values(list(ds_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubedsinfo", column_data, value_data))
                 conn.commit()
                 self.input_tableinfo("kubedsinfo", cursor, conn)
@@ -610,7 +609,7 @@ class Processing:
 
             # Old ds Update
             if len(old_ds_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubedsinfo", "_dsid", ",".join(old_ds_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubedsinfo", "_dsid", ",".join(old_ds_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubedsinfo", cursor, conn)
 
@@ -623,12 +622,14 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubedsinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubedsinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_replicaset_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             cur_dict.execute(stmt.SELECT_RSINFO_CLUSTERID.format(self.cluster_id))
@@ -644,9 +645,13 @@ class Processing:
             # New rs Insertion
             for new_rs in new_rs_list:
                 rs_data = dict(new_rs_list[new_rs])
+
                 rs_ns_name = rs_data.pop("nsname")
                 rs_ref_uid = rs_data.pop("refuid")
                 rs_data["nsid"] = self.namespace_query_dict[rs_ns_name]["_nsid"]
+
+                rs_selector = rs_data.pop("selector")
+                rs_labels = rs_data.pop("label")
 
                 if rs_data["refkind"] == "Deployment":
                     rs_data["refid"] = self.deploy_query_dict[rs_ref_uid]["_deployid"]
@@ -654,7 +659,7 @@ class Processing:
                     rs_data["refid"] = self.sts_query_dict[rs_ref_uid]["_stsid"]
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubersinfo")
-                value_data = utils.insert_values(list(rs_data.values())+[1])
+                value_data = utils.insert_values(list(rs_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubersinfo", column_data, value_data))
                 conn.commit()
                 self.input_tableinfo("kubersinfo", cursor, conn)
@@ -662,7 +667,7 @@ class Processing:
 
             # Old rs Update
             if len(old_rs_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubersinfo", "_rsid", ",".join(old_rs_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubersinfo", "_rsid", ",".join(old_rs_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubersinfo", cursor, conn)
 
@@ -675,12 +680,16 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubersinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubersinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
-    def update_pod_info(self, cursor, cur_dict, conn):
+    def update_pod_and_container_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        # Pre-processing
+        ontunetime = self.get_ontunetime(cursor)
+        pod_container_list = dict()
 
         try:
             cur_dict.execute(stmt.SELECT_PODINFO_CLUSTERID.format(self.cluster_id))
@@ -688,7 +697,22 @@ class Processing:
         except:
             pass
 
+        try: 
+            cur_dict.execute(stmt.SELECT_CONTAINERINFO_CLUSTERID.format(self.cluster_id))
+            self.container_query_dict = dict({f"{x['_poduid']}/{x['_containername']}":x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        # Pod Processing
         try:
+            # Container pop and Container list define
+            # 이 부분을 먼저 처리하는 이유는 Container 변수 값을 Pop으로 빼내서 별도 저장하기 위한 용도
+            for pod in self.pod_list:
+                pod_containers = self.pod_list[pod].pop("containers")                
+                for pc in pod_containers:
+                    pod_container_list[f"{pod}/{pc['name']}"] = pc
+
+            # Pod list define
             old_pod_list = dict(filter(lambda x: x[0] not in self.pod_list, self.pod_query_dict.items()))
             new_pod_list = dict(filter(lambda x: x[0] not in self.pod_query_dict, self.pod_list.items()))
             old_pod_id_list = list(str(x[1]["_podid"]) for x in old_pod_list.items())
@@ -699,6 +723,7 @@ class Processing:
                 pod_node_name = pod_data.pop("nodename")
                 pod_ns_name = pod_data.pop("nsname")
                 pod_ref_uid = pod_data.pop("refuid")
+                pod_labels = pod_data.pop("label")
 
                 pod_data["nsid"] = self.namespace_query_dict[pod_ns_name]["_nsid"] if pod_ns_name else 0
                 pod_data["nodeid"] = self.node_query_dict[pod_node_name]["_nodeid"] if pod_node_name else 0
@@ -714,7 +739,7 @@ class Processing:
                     pod_data["refid"] = self.sts_query_dict[pod_ref_uid]["_stsid"]
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubepodinfo")
-                value_data = utils.insert_values(list(pod_data.values())+[1])
+                value_data = utils.insert_values(list(pod_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubepodinfo", column_data, value_data))
                 conn.commit()
 
@@ -723,7 +748,7 @@ class Processing:
 
             # Old pod Update
             if len(old_pod_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kubepodinfo", "_podid", ",".join(old_pod_id_list)))
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubepodinfo", "_podid", ",".join(old_pod_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubepodinfo", cursor, conn)
 
@@ -740,157 +765,43 @@ class Processing:
                 self.ref_process_flag = False
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubepodinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubepodinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
+            return
 
-
-    def update_ref_container_info(self, cursor, cur_dict, conn):
-        if not self.ref_process_flag:
-            return False
-
+        # Container Processing
         try:
-            cur_dict.execute(stmt.SELECT_REF_CONTAINERINFO_CLUSTERID.format(self.cluster_id))
-            self.ref_container_query = cur_dict.fetchall()
-        except:
-            pass
+            old_pod_container_list = dict(filter(lambda x: x[0] not in pod_container_list, self.container_query_dict.items()))
+            new_pod_container_list = dict(filter(lambda x: x[0] not in self.container_query_dict, pod_container_list.items()))
+            old_pod_container_id_list = list(str(x[1]["_podid"]) for x in old_pod_container_list.items())
 
-        try:
-            def rc_exist_condition_new(rc):
-                if "kind" not in rc:
-                    return True
-                else:
-                    return not (rc["kind"],rc["name"],rc["image"]) in list(
-                        (x["_refobjkind"],x["_refcontainername"],x["_image"]) for x in self.ref_container_query
-                    )
+            for new_pod_container in new_pod_container_list:
+                pc_data = dict(new_pod_container_list[new_pod_container])
 
-            def rc_exist_condition_old(rc):
-                if "_refobjkind" not in rc:
-                    return True
-                else:
-                    return not (rc["_refobjkind"],rc["_refcontainername"],rc["_image"]) in list(
-                        (x["kind"],x["name"],x["image"]) for x in self.ref_container_list
-                    )
-
-            old_rc_list = list(filter(lambda x: rc_exist_condition_old(x), self.ref_container_query))
-            new_rc_list = list(filter(lambda x: rc_exist_condition_new(x), self.ref_container_list))
-            old_rc_id_list = list(str(x["_refcontainerid"]) for x in old_rc_list)
-
-            # New rc Insertion
-            for new_rc in new_rc_list:
-                rc_data = {
-                    "objkind": new_rc["kind"],
-                    "objid": 0,
-                    "clusterid": self.cluster_id,
-                    "name": new_rc["name"],
-                    "image": new_rc["image"],
-                    "ports": json.dumps(new_rc["ports"])[1:-1].replace("'", '"'),
-                    "env": json.dumps(new_rc["env"])[1:-1].replace("'", '"'),
-                    "resources": json.dumps(new_rc["resources"])[1:-1].replace("'", '"'),
-                    "volumemounts": json.dumps(new_rc["volumemounts"])[1:-1].replace("'", '"')
-                }
-                rc_obj_uid = new_rc["uid"]
-
-                if rc_data["objkind"] == "Deployment":
-                    rc_data["objid"] = self.deploy_query_dict[rc_obj_uid]["_deployid"]
-                elif rc_data["objkind"] == "StatefulSet":
-                    rc_data["objid"] = self.sts_query_dict[rc_obj_uid]["_stsid"]
-                elif rc_data["objkind"] == "DaemonSet":
-                    rc_data["objid"] = self.ds_query_dict[rc_obj_uid]["_dsid"]
-                elif rc_data["objkind"] == "ReplicaSet":
-                    rc_data["objid"] = self.rs_query_dict[rc_obj_uid]["_rsid"]
-                elif rc_data["objkind"] == "Pod":
-                    rc_data["objid"] = self.pod_query_dict[rc_obj_uid]["_podid"]
-
-                column_data = utils.insert_columns_ref(self.schema_obj, "kuberefcontainerinfo")
-                value_data = utils.insert_values(list(rc_data.values())+[1])
-                
-                cursor.execute(stmt.INSERT_TABLE.format("kuberefcontainerinfo", column_data, value_data))
-                conn.commit()
-
-                self.input_tableinfo("kuberefcontainerinfo", cursor, conn)
-                self.log.write("PUT", f"kuberefcontainerinfo insertion is completed - {new_rc}")
-
-            # Old rc Update
-            if len(old_rc_id_list) > 0:
-                cursor.execute(stmt.UPDATE_ENABLED.format("kuberefcontainerinfo", "_refcontainerid", ",".join(old_rc_id_list)))
-                conn.commit()
-                self.input_tableinfo("kuberefcontainerinfo", cursor, conn)
-
-            # New rc ID Update
-            try:
-                cur_dict.execute(stmt.SELECT_REF_CONTAINERINFO_CLUSTERID.format(self.cluster_id))
-                self.ref_container_query = cur_dict.fetchall()
-            except:
-                pass
-        except Exception as e:
-            conn.rollback()
-            self.log.write("GET", f"kuberefcontainerinfo has an error. Put data process is stopped. - {str(e)}")
-            self.ref_process_flag = False
-
-    def update_pod_container_info(self, cursor, cur_dict, conn):
-        if not self.ref_process_flag:
-            return False
-
-        try:
-            container_info = list()
-            container_query_list = list()
-            
-            containerinfo_dict = dict({x[0]:dict({
-                y["podRef"]["uid"]:y["containers"] for y in x[1]
-            }) for x in self.pod_metric_list.items()})
-
-            for node in containerinfo_dict:
-                for pod in containerinfo_dict[node]:
-                    container_info.extend(list({
-                        "name": x["name"],
-                        "starttime": datetime.strptime(x["startTime"],"%Y-%m-%dT%H:%M:%S%z"),
-                        "pod": pod,
-                        "node": node
-                    } for x in containerinfo_dict[node][pod]))
-
-            try:
-                nodeid_data = ",".join(list(str(self.node_query_dict[x]["_nodeid"]) for x in self.node_query_dict))
-                cur_dict.execute(stmt.SELECT_CONTAINERINFO_NODEID.format(nodeid_data))
-                container_query_list = list(dict(x) for x in cur_dict.fetchall())
-            except:
-                pass
-
-            new_container_list = list(filter(lambda x: [x["node"],self.get_api_uid(x["pod"]),x["name"]] not in list([y["_nodename"],y["_poduid"],y["_containername"]] for y in container_query_list), container_info))
-
-            for container in new_container_list:
-                # Pod ID는 Stats API에서 조회되는 UID가 Kubernetes API에서는 UID / Annotation - UID 둘 중 하나로 입력되므로 매핑작업이 선행되어야 함
-                podid = self.get_api_podid(self.get_api_uid(container["pod"]))
+                pc_pod_uid = pc_data.pop("uid")
+                pc_pod_id = self.pod_query_dict[pc_pod_uid]["_podid"]
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubecontainerinfo")
-                value_data = utils.insert_values([podid, container["name"], utils.datetime_to_timestampz(container["starttime"])])
-
+                value_data = utils.insert_values([pc_pod_id]+list(pc_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubecontainerinfo", column_data, value_data))
                 conn.commit()
                 self.input_tableinfo("kubecontainerinfo", cursor, conn)
-                self.log.write("PUT", f"Kubecontainerinfo insertion is completed - {podid} / {container['name']}")
-
-            # New Pod Container info Update
-            try:
-                nodeid_data = ",".join(list(str(self.node_query_dict[x]["_nodeid"]) for x in self.node_query_dict))
-                cur_dict.execute(stmt.SELECT_CONTAINERINFO_NODEID.format(nodeid_data))
-                result = cur_dict.fetchall()
-
-                for row in result:
-                    podid = row["_podid"]
-                    if podid not in self.pod_container_query_dict:
-                        self.pod_container_query_dict[podid] = list()
-
-                    self.pod_container_query_dict[podid].append(row)
-            except:
-                pass
+                self.log.write("PUT", f"Kubecontainerinfo insertion is completed - {new_pod_container}")
+                
+            if len(old_pod_container_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubecontainerinfo", "_containerid", ",".join(old_pod_container_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubecontainerinfo", cursor, conn)
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubecontainerinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubecontainerinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_pod_device_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             device_type_set = {'network','volume'}
@@ -932,7 +843,7 @@ class Processing:
             for devtype in device_type_set:
                 for devinfo in new_dev_info_set[devtype]:
                     column_data = utils.insert_columns_ref(self.schema_obj, "kubepoddeviceinfo")
-                    value_data = utils.insert_values([devinfo, devtype])
+                    value_data = utils.insert_values([devinfo, devtype, ontunetime, ontunetime])
                     cursor.execute(stmt.INSERT_TABLE.format("kubepoddeviceinfo", column_data, value_data))
                     conn.commit()
                     self.input_tableinfo("kubepoddeviceinfo", cursor, conn)
@@ -946,12 +857,14 @@ class Processing:
                     pass
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubedeviceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubedeviceinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_lastrealtimeperf_table(self, cursor, conn):
         if not self.ref_process_flag:
             return False
+
+        ontunetime = self.get_ontunetime(cursor)
 
         try:
             for node in self.node_query_dict:
@@ -960,7 +873,6 @@ class Processing:
                 network_prev_cum_usage = self.system_var.get_network_metric("lastrealtimeperf", node)                
                 network_cum_usage = sum(list(x["rxBytes"]+x["txBytes"] for x in node_data["network"]["interfaces"]))
                 network_usage = network_cum_usage - network_prev_cum_usage if network_prev_cum_usage else 0
-                ontunetime = self.get_ontunetime(cursor)
 
                 node_perf = [
                     self.node_query_dict[node]["_nodeid"],
@@ -990,7 +902,7 @@ class Processing:
                 self.log.write("PUT", f"Kubelastrealtimeperf update is completed - {self.node_query_dict[node]['_nodeid']}")
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kubelastrealtimeperf has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kubelastrealtimeperf has an error. Put data process is stopped. - {str(e)}")
             return False
 
     def update_realtime_table(self, cursor, conn):
@@ -1130,7 +1042,7 @@ class Processing:
                     # Insert pod container metric data
                     for pod_container in pod["containers"]:
                         realtime_containerperf = [
-                            list(filter(lambda x: x["_containername"] == pod_container["name"], list(self.pod_container_query_dict[podid])))[0]["_containerid"],
+                            self.container_query_dict[f"{self.get_api_uid(uid)}/{pod_container['name']}"]["_containerid"],
                             ontunetime,
                             agenttime,
                             utils.calculate('cpu_usage_percent', [pod_container["cpu"]["usageNanoCores"], self.node_list[node]["cpucount"]]) if "cpu" in pod_container and "usageNanoCores" in pod_container["cpu"] else 0,
@@ -1210,7 +1122,7 @@ class Processing:
 
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kube realtime tables have an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kube realtime tables have an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def insert_average_table(self, table_midfix, key_columns, cursor, conn):
@@ -1254,7 +1166,7 @@ class Processing:
             self.log.write("PUT", f"{table_lt_name} update is completed - {ontunetime}")
         except Exception as e:
             conn.rollback()
-            self.log.write("GET", f"Kube average tables have an error. Put data process is stopped. - {str(e)}")
+            self.log.write("ERROR", f"Kube average tables have an error. Put data process is stopped. - {str(e)}")
 
     def update_average_table(self, cursor, conn):
         if not self.ref_process_flag:

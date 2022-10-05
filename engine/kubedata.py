@@ -18,6 +18,7 @@ class Kubedata:
         self.node_data = dict()
         self.pod_data = dict()
         self.svc_data = dict()
+        self.ing_data = dict()
         self.ds_data = dict()
         self.rs_data = dict()
         self.deploy_data = dict()
@@ -46,18 +47,20 @@ class Kubedata:
         self.cfg.verify_ssl = True
         self.cfg.ssl_ca_cert = 'ca.crt'
 
-    def get_stats_api(self):
+    def get_api(self):
         try:
             self.api_version_info = client.CoreApi(client.ApiClient(self.cfg)).get_api_versions()
             self.cluster_address = self.api_version_info.server_address_by_client_cid_rs[0].server_address.split(":")[0]
 
             core_api = client.CoreV1Api(client.ApiClient(self.cfg))
             apps_api = client.AppsV1Api(client.ApiClient(self.cfg))
-            
+            network_api = client.NetworkingV1Api(client.ApiClient(self.cfg))
+
             self.get_kube_ns_data(core_api)
             self.get_kube_node_data(core_api)
             self.get_kube_pod_data(core_api)
             self.get_kube_svc_data(core_api)
+            self.get_kube_ing_data(network_api)
             self.get_kube_ds_data(apps_api)
             self.get_kube_rs_data(apps_api)
             self.get_kube_deploy_data(apps_api)
@@ -167,15 +170,15 @@ class Kubedata:
                     "refkind": pod.metadata.owner_references[0].kind if pod.metadata.owner_references else "",
                     "refid": 0,
                     "refuid": pod.metadata.owner_references[0].uid if pod.metadata.owner_references else "",
-                    "containers": list() if pod.metadata.owner_references or pod.metadata.owner_references[0].kind != 'Node' else list({
-                        "kind": "Pod",
+                    "label": pod.metadata.labels if pod.metadata.labels else dict(),
+                    "containers": list({
                         "uid": pod.metadata.uid,
                         "name": x.name,
                         "image": x.image,
-                        "ports": str(x.ports) if x.ports else "",
-                        "env": str(x.env) if x.env else "",
-                        "resources": str(x.resources) if x.resources else "",
-                        "volumemounts": str(x.volume_mounts) if x.volume_mounts else ""
+                        "ports": json.dumps(str(x.ports))[1:-1].replace("'", '"') if x.ports else "",
+                        "env": json.dumps(str(x.env))[1:-1].replace("'", '"') if x.env else "",
+                        "resources": json.dumps(str(x.resources))[1:-1].replace("'", '"') if x.resources else "",
+                        "volumemounts": json.dumps(str(x.volume_mounts))[1:-1].replace("'", '"') if x.volume_mounts else ""
                     } for x in pod.spec.containers)
                 }
 
@@ -188,6 +191,8 @@ class Kubedata:
         try:
             nslist = api.list_namespace()
             self.ns_data = list({'name': x.metadata.name, 'status': x.status.phase} for x in nslist.items)
+
+            self.log.write("GET", "Kube Namespace Data Import is completed.")
         except Exception as e:
             self.log.write("Error", str(e))
 
@@ -204,13 +209,57 @@ class Kubedata:
                     "servicetype": svc.spec.type,
                     "clusterip": svc.spec.cluster_ip,
                     "ports": utils.dict_port_to_str(svc.spec.ports),
-                    "selector": utils.dict_to_str(svc.spec.selector),
+                    "label": svc.metadata.labels if svc.metadata.labels else dict(),
+                    "selector": svc.spec.selector if svc.spec.selector else dict(),
                     "nsname": svc.metadata.namespace
                 }
 
             self.log.write("GET", "Kube Service Data Import is completed.")
 
             self.svc_data = svc_data                
+        except Exception as e:
+            self.log.write("Error", str(e))
+
+    def get_kube_ing_data(self, api):
+        try:
+            ingresses = api.list_ingress_for_all_namespaces()
+            ing_data = dict()
+            for ing in ingresses.items:
+                ing_host_data = list()
+
+                if ing.spec.default_backend and ing.spec.default_backend.service:
+                    ing_host_data.append({
+                        "hostname": "*",
+                        "pathtype": "",
+                        "path": "",
+                        "svcname": ing.spec.default_backend.service.name,
+                        "svcport": ing.spec.default_backend.service.port.number
+                    })
+
+                for rule in ing.spec.rules:
+                    hostname = rule.host if rule.host else "*"
+                    for path in rule.http.paths:
+                        ing_host_data.append({
+                            "hostname": hostname,
+                            "pathtype": path.path_type,
+                            "path": path.path,
+                            "svcname": path.backend.service.name if path.backend.service else "",
+                            "svcport": path.backend.service.port.number if path.backend.service else ""
+                        })
+
+                ing_data[ing.metadata.uid] = {
+                    "nsid": 0,
+                    "name": ing.metadata.name,
+                    "uid": ing.metadata.uid,
+                    "starttime": utils.datetime_to_timestampz(ing.metadata.creation_timestamp),
+                    "label": ing.metadata.labels if ing.metadata.labels else dict(),
+                    "nsname": ing.metadata.namespace,
+                    "hostdata": ing_host_data
+                }
+
+            self.log.write("GET", "Kube Ingress Data Import is completed.")
+
+            self.ing_data = ing_data                
         except Exception as e:
             self.log.write("Error", str(e))
 
@@ -231,18 +280,9 @@ class Kubedata:
                     "ready": utils.nvl_zero(ds.status.number_ready),
                     "updated": utils.nvl_zero(ds.status.updated_number_scheduled),
                     "available": utils.nvl_zero(ds.status.number_available),
-                    "selector": utils.dict_to_str(ds.spec.selector.match_labels),
-                    "nsname": ds.metadata.namespace,
-                    "containers": list({
-                        "kind": "DaemonSet",
-                        "uid": ds.metadata.uid,
-                        "name": x.name,
-                        "image": x.image,
-                        "ports": str(x.ports) if x.ports else "",
-                        "env": str(x.env) if x.env else "",
-                        "resources": str(x.resources) if x.resources else "",
-                        "volumemounts": str(x.volume_mounts) if x.volume_mounts else ""
-                    } for x in ds.spec.template.spec.containers) if ds.spec.template and ds.spec.template.spec.containers else list()
+                    "label": ds.metadata.labels if ds.metadata.labels else dict(),
+                    "selector": ds.spec.selector if ds.spec.selector else dict(),
+                    "nsname": ds.metadata.namespace
                 }
 
             self.log.write("GET", "Kube DaemonSet Data Import is completed.")
@@ -267,21 +307,12 @@ class Kubedata:
                     "readyrs": utils.nvl_zero(rs.status.ready_replicas),
                     "availablers": utils.nvl_zero(rs.status.available_replicas),
                     "observedgen": utils.nvl_zero(rs.status.observed_generation),
-                    "selector": utils.dict_to_str(rs.spec.selector.match_labels),
+                    "label": rs.metadata.labels if rs.metadata.labels else dict(),
+                    "selector": rs.spec.selector if rs.spec.selector else dict(),
                     "refkind": rs.metadata.owner_references[0].kind if rs.metadata.owner_references else "",
                     "refid": 0,                    
                     "refuid": rs.metadata.owner_references[0].uid if rs.metadata.owner_references else 0,
-                    "nsname": rs.metadata.namespace,
-                    "containers": list() if rs.metadata.owner_references else list({
-                        "kind": "ReplicaSet",
-                        "uid": rs.metadata.uid,
-                        "name": x.name,
-                        "image": x.image,
-                        "ports": str(x.ports) if x.ports else "",
-                        "env": str(x.env) if x.env else "",
-                        "resources": str(x.resources) if x.resources else "",
-                        "volumemounts": str(x.volume_mounts) if x.volume_mounts else ""
-                    } for x in rs.spec.template.spec.containers) if rs.spec.template and rs.spec.template.spec.containers else list()
+                    "nsname": rs.metadata.namespace
                 }
 
             self.log.write("GET", "Kube ReplicaSet Data Import is completed.")
@@ -307,18 +338,9 @@ class Kubedata:
                     "readyrs": utils.nvl_zero(deploy.status.ready_replicas),
                     "availablers": utils.nvl_zero(deploy.status.available_replicas),
                     "observedgen": utils.nvl_zero(deploy.status.observed_generation),
-                    "selector": utils.dict_to_str(deploy.spec.selector.match_labels),
-                    "nsname": deploy.metadata.namespace,
-                    "containers": list({
-                        "kind": "Deployment",
-                        "uid": deploy.metadata.uid,
-                        "name": x.name,
-                        "image": x.image,
-                        "ports": str(x.ports) if x.ports else "",
-                        "env": str(x.env) if x.env else "",
-                        "resources": str(x.resources) if x.resources else "",
-                        "volumemounts": str(x.volume_mounts) if x.volume_mounts else ""
-                    } for x in deploy.spec.template.spec.containers) if deploy.spec.template and deploy.spec.template.spec.containers else list()
+                    "label": deploy.metadata.labels if deploy.metadata.labels else dict(),
+                    "selector": deploy.spec.selector if deploy.spec.selector else dict(),
+                    "nsname": deploy.metadata.namespace
                 }
 
             self.log.write("GET", "Kube Deployment Data Import is completed.")
@@ -342,18 +364,9 @@ class Kubedata:
                     "replicas": utils.nvl_zero(sts.status.replicas),
                     "readyrs": utils.nvl_zero(sts.status.ready_replicas),
                     "availablers": utils.nvl_zero(sts.status.available_replicas),
-                    "selector": utils.dict_to_str(sts.spec.selector.match_labels),
-                    "nsname": sts.metadata.namespace,
-                    "containers": list({
-                        "kind": "StatefulSet",
-                        "uid": sts.metadata.uid,
-                        "name": x.name,
-                        "image": x.image,
-                        "ports": str(x.ports) if x.ports else "",
-                        "env": str(x.env) if x.env else "",
-                        "resources": str(x.resources) if x.resources else "",
-                        "volumemounts": str(x.volume_mounts) if x.volume_mounts else ""
-                    } for x in sts.spec.template.spec.containers) if sts.spec.template and sts.spec.template.spec.containers else list()
+                    "label": sts.metadata.labels if sts.metadata.labels else dict(),
+                    "selector": sts.spec.selector if sts.spec.selector else dict(),
+                    "nsname": sts.metadata.namespace
                 }
 
             self.log.write("GET", "Kube StatefulSet Data Import is completed.")
