@@ -233,7 +233,8 @@ class Kubedata:
                         "pathtype": "",
                         "path": "",
                         "svcname": ing.spec.default_backend.service.name,
-                        "svcport": ing.spec.default_backend.service.port.number
+                        "svcport": ing.spec.default_backend.service.port.number,
+                        "uid": ing.metadata.uid
                     })
 
                 for rule in ing.spec.rules:
@@ -244,7 +245,8 @@ class Kubedata:
                             "pathtype": path.path_type,
                             "path": path.path,
                             "svcname": path.backend.service.name if path.backend.service else "",
-                            "svcport": path.backend.service.port.number if path.backend.service else ""
+                            "svcport": path.backend.service.port.number if path.backend.service else "",
+                            "uid": ing.metadata.uid
                         })
 
                 ing_data[ing.metadata.uid] = {
@@ -252,6 +254,7 @@ class Kubedata:
                     "name": ing.metadata.name,
                     "uid": ing.metadata.uid,
                     "starttime": utils.datetime_to_timestampz(ing.metadata.creation_timestamp),
+                    "classname": ing.spec.ingress_class_name if ing.spec.ingress_class_name else str(),
                     "label": ing.metadata.labels if ing.metadata.labels else dict(),
                     "nsname": ing.metadata.namespace,
                     "hostdata": ing_host_data

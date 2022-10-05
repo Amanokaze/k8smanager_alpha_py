@@ -22,6 +22,8 @@ SELECT_NODEINFO_CLUSTERID = "select * from kubenodeinfo where _clusterid={} and 
 SELECT_NODE_SYSCONTAINER_NODEID = "select nsc.*, n._nodename from kubenodesyscoinfo nsc, kubenodeinfo n where nsc._nodeid=n._nodeid and n._nodeid in ({});"
 SELECT_REF_CONTAINERINFO_CLUSTERID = "select * from kuberefcontainerinfo ref where _clusterid={} and _enabled=1;"
 SELECT_SVCINFO_CLUSTERID= "select svc.* from kubesvcinfo svc, kubensinfo ns where ns._nsid=svc._nsid and ns._clusterid={} and svc._enabled=1;"
+SELECT_INGINFO_CLUSTERID= "select ing.* from kubeinginfo ing, kubensinfo ns where ns._nsid=ing._nsid and ns._clusterid={} and ing._enabled=1;"
+SELECT_INGHOSTINFO_CLUSTERID= "select h.*, ing._uid as _inguid from kubeinghostinfo h, kubeinginfo ing, kubensinfo ns where h._ingid = ing._ingid and ns._nsid=ing._nsid and ns._clusterid={} and ing._enabled=1;"
 SELECT_DEPLOYINFO_CLUSTERID = "select dep.* from kubedeployinfo dep, kubensinfo ns where ns._nsid=dep._nsid and ns._clusterid={} and dep._enabled=1;"
 SELECT_STSINFO_CLUSTERID = "select sts.* from kubestsinfo sts, kubensinfo ns where ns._nsid=sts._nsid and ns._clusterid={} and sts._enabled=1;"
 SELECT_DSINFO_CLUSTERID = "select ds.* from kubedsinfo ds, kubensinfo ns where ns._nsid=ds._nsid and ns._clusterid={} and ds._enabled=1;"

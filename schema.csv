@@ -98,6 +98,16 @@ reference,kubeinginfo,_classname,text,NULL
 reference,kubeinginfo,_enabled,int8,NOT NULL,DEFAULT 0
 reference,kubeinginfo,_createdtime,int8,NOT NULL,
 reference,kubeinginfo,_updatetime,int8,NOT NULL,
+reference,kubeinghostinfo,_inghostid,serial,NOT NULL,PRIMARY KEY
+reference,kubeinghostinfo,_ingid,int8,NOT NULL
+reference,kubeinghostinfo,_hostname,text,NOT NULL
+reference,kubeinghostinfo,_pathtype,text,NOT NULL
+reference,kubeinghostinfo,_path,text,NOT NULL
+reference,kubeinghostinfo,_svcname,text,NOT NULL
+reference,kubeinghostinfo,_svcport,int8,NOT NULL
+reference,kubeinghostinfo,_enabled,int8,NOT NULL,DEFAULT 0
+reference,kubeinghostinfo,_createdtime,int8,NOT NULL,
+reference,kubeinghostinfo,_updatetime,int8,NOT NULL,
 reference,kubesvcinfo,_svdid,serial,NOT NULL,PRIMARY KEY
 reference,kubesvcinfo,_nsid,int8,NOT NULL
 reference,kubesvcinfo,_svcname,text,NOT NULL

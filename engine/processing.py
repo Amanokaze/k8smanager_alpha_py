@@ -13,6 +13,8 @@ class Processing:
 
         self.namespace_query_dict = dict()       # Key: UID
         self.svc_query_dict = dict()             # Key: UID
+        self.ing_query_dict = dict()             # Key: UID
+        self.ing_host_query_dict = dict()        # Key: Ingress UID
         self.deploy_query_dict = dict()          # Key: UID
         self.ds_query_dict = dict()              # Key: UID
         self.rs_query_dict = dict()              # Key: UID
@@ -39,6 +41,7 @@ class Processing:
         self.node_list = kubedata.node_data
         self.pod_list = kubedata.pod_data
         self.svc_list = kubedata.svc_data
+        self.ing_list = kubedata.ing_data
         self.deploy_list = kubedata.deploy_data
         self.sts_list = kubedata.sts_data
         self.ds_list = kubedata.ds_data
@@ -177,6 +180,7 @@ class Processing:
             self.update_node_info(cursor, cur_dict, conn)
             self.update_node_systemcontainer_info(cursor, cur_dict, conn)
             self.update_service_info(cursor, cur_dict, conn)
+            self.update_ingress_info(cursor, cur_dict, conn)
             self.update_deployment_info(cursor, cur_dict, conn)
             self.update_statefulset_info(cursor, cur_dict, conn)
             self.update_daemonset_info(cursor, cur_dict, conn)
@@ -457,6 +461,100 @@ class Processing:
             conn.rollback()
             self.log.write("ERROR", f"Kubesvcinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
+
+    def update_ingress_info(self, cursor, cur_dict, conn):
+        if not self.ref_process_flag:
+            return False            
+
+        ontunetime = self.get_ontunetime(cursor)
+        ing_host_list = dict()
+
+        try:
+            cur_dict.execute(stmt.SELECT_INGINFO_CLUSTERID.format(self.cluster_id))
+            self.ing_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        try:
+            cur_dict.execute(stmt.SELECT_INGHOSTINFO_CLUSTERID.format(self.cluster_id))
+            self.ing_host_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        try:
+            # Container pop and Container list define
+            # 이 부분을 먼저 처리하는 이유는 Container 변수 값을 Pop으로 빼내서 별도 저장하기 위한 용도
+
+            for ing in self.ing_list:
+                ing_hosts = self.ing_list[ing].pop("hostdata")                
+                for ih in ing_hosts:
+                    ing_host_list[f"{ing}/{ih['hostname']}"] = ih
+
+            old_ing_list = dict(filter(lambda x: x[0] not in self.ing_list, self.ing_query_dict.items()))
+            new_ing_list = dict(filter(lambda x: x[0] not in self.ing_query_dict, self.ing_list.items()))
+            old_ing_id_list = list(str(x[1]["_ingid"]) for x in old_ing_list.items())
+
+            # New ing Insertion
+            for new_ing in new_ing_list:
+                ing_data = dict(new_ing_list[new_ing])
+
+                ing_ns_name = ing_data.pop("nsname")                
+                ing_data["nsid"] = self.namespace_query_dict[ing_ns_name]["_nsid"]
+
+                ing_labels = ing_data.pop("label")
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubeinginfo")
+                value_data = utils.insert_values(list(ing_data.values())+[1, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubeinginfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubeinginfo", cursor, conn)
+                self.log.write("PUT", f"Kubeinginfo insertion is completed - {new_ing}")
+
+            # Old ing Update
+            if len(old_ing_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubeinginfo", "_ingid", ",".join(old_ing_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubeinginfo", cursor, conn)
+
+            # New ing ID Update
+            try:
+                cur_dict.execute(stmt.SELECT_INGINFO_CLUSTERID.format(self.cluster_id))
+                result = cur_dict.fetchall()
+                self.ing_query_dict = dict({x["_uid"]:x for x in result})
+            except:
+                pass
+        except Exception as e:
+            conn.rollback()
+            self.log.write("ERROR", f"Kubeinginfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
+        # Ingress Host Processing
+        try:
+            old_ing_host_list = dict(filter(lambda x: x[0] not in ing_host_list, self.ing_host_query_dict.items()))
+            new_ing_host_list = dict(filter(lambda x: x[0] not in self.ing_host_query_dict, ing_host_list.items()))
+            old_ing_host_id_list = list(str(x[1]["_ingid"]) for x in old_ing_host_list.items())
+
+            for new_ing_host in new_ing_host_list:
+                ih_data = dict(new_ing_host_list[new_ing_host])
+
+                ih_ing_uid = ih_data.pop("uid")
+                ih_ing_id = self.ing_query_dict[ih_ing_uid]["_ingid"]
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubeinghostinfo")
+                value_data = utils.insert_values([ih_ing_id]+list(ih_data.values())+[1, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubeinghostinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubeinghostinfo", cursor, conn)
+                self.log.write("PUT", f"Kubeinghostinfo insertion is completed - {new_ing_host}")
+                
+            if len(old_ing_host_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubeinghostinfo", "_inghostid", ",".join(old_ing_host_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubeinghostinfo", cursor, conn)
+        except Exception as e:
+            conn.rollback()
+            self.log.write("ERROR", f"Kubeinghostinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False            
 
     def update_deployment_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
@@ -785,6 +883,13 @@ class Processing:
                 cursor.execute(stmt.UPDATE_ENABLED.format("kubecontainerinfo", "_containerid", ",".join(old_pod_container_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubecontainerinfo", cursor, conn)
+
+            # New container ID Update
+            try:
+                cur_dict.execute(stmt.SELECT_CONTAINERINFO_CLUSTERID.format(self.cluster_id))
+                self.container_query_dict = dict({f"{x['_poduid']}/{x['_containername']}":x for x in cur_dict.fetchall()})
+            except:
+                pass                
         except Exception as e:
             conn.rollback()
             self.log.write("ERROR", f"Kubecontainerinfo has an error. Put data process is stopped. - {str(e)}")
@@ -1034,6 +1139,7 @@ class Processing:
 
                     # Insert pod container metric data
                     for pod_container in pod["containers"]:
+                        self.log.write("DEBUG",self.container_query_dict)
                         realtime_containerperf = [
                             self.container_query_dict[f"{self.get_api_uid(uid)}/{pod_container['name']}"]["_containerid"],
                             ontunetime,
