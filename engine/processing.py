@@ -33,13 +33,6 @@ class Processing:
             "index": dict()
         }
 
-    # 해야 할 일 알려줌
-    # 1.RefContainer 관련 부분 삭제
-    # 2.PodContainer 전원 Insert 
-    # 3.Ingress 구현
-    # 4.Label-Selector 관련 Logic 구현
-    # 5. Updatetime 구혀ㅛㄴ
-    # 6. 현
     def set_kube_data(self, kubedata, basic_info):
         # Kube Data variables
         self.namespace_list = kubedata.ns_data
