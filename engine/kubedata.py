@@ -227,27 +227,64 @@ class Kubedata:
             for ing in ingresses.items:
                 ing_host_data = list()
 
-                if ing.spec.default_backend and ing.spec.default_backend.service:
-                    ing_host_data.append({
-                        "hostname": "*",
-                        "pathtype": "",
-                        "path": "",
-                        "svcname": ing.spec.default_backend.service.name,
-                        "svcport": ing.spec.default_backend.service.port.number,
-                        "uid": ing.metadata.uid
-                    })
+                if ing.spec.default_backend:
+                    dbe = ing.spec.default_backend
 
+                    if dbe.service:
+                        ing_host_data.append({
+                            "backendtype": "service",
+                            "hostname": "*",
+                            "pathtype": "",
+                            "path": "",
+                            "svcname": dbe.service.name,
+                            "svcport": dbe.service.port.number,
+                            "rscapigroup": "",
+                            "rsckind": "",
+                            "rscname": "",
+                            "uid": ing.metadata.uid
+                        })
+                    elif dbe.resrouce:
+                        ing_host_data.append({
+                            "backendtype": "resource",
+                            "hostname": "*",
+                            "pathtype": "",
+                            "path": "",
+                            "svcname": "",
+                            "svcport": "",
+                            "rscapigroup": dbe.resource.api_group,
+                            "rsckind": dbe.resource.kind,
+                            "rscname": dbe.resource.name,
+                            "uid": ing.metadata.uid
+                        })
                 for rule in ing.spec.rules:
                     hostname = rule.host if rule.host else "*"
                     for path in rule.http.paths:
-                        ing_host_data.append({
-                            "hostname": hostname,
-                            "pathtype": path.path_type,
-                            "path": path.path,
-                            "svcname": path.backend.service.name if path.backend.service else "",
-                            "svcport": path.backend.service.port.number if path.backend.service else "",
-                            "uid": ing.metadata.uid
-                        })
+                        if path.backend.service:
+                            ing_host_data.append({
+                                "backendtype": "service",
+                                "hostname": hostname,
+                                "pathtype": path.path_type,
+                                "path": path.path,
+                                "svcname": path.backend.service.name,
+                                "svcport": path.backend.service.port.number,
+                                "rscapigroup": "",
+                                "rsckind": "",
+                                "rscname": "",
+                                "uid": ing.metadata.uid
+                            })
+                        elif path.backend.resource:
+                            ing_host_data.append({
+                                "backendtype": "resource",
+                                "hostname": hostname,
+                                "pathtype": path.path_type,
+                                "path": path.path,
+                                "svcname": "",
+                                "svcport": "",
+                                "rscapigroup": path.backend.resource.api_group,
+                                "rsckind": path.backend.resource.kind,
+                                "rscname": path.backend.resource.name,
+                                "uid": ing.metadata.uid
+                            })
 
                 ing_data[ing.metadata.uid] = {
                     "nsid": 0,

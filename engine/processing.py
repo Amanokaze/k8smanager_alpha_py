@@ -477,7 +477,8 @@ class Processing:
 
         try:
             cur_dict.execute(stmt.SELECT_INGHOSTINFO_CLUSTERID.format(self.cluster_id))
-            self.ing_host_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+            result = cur_dict.fetchall()
+            self.ing_host_query_dict = dict({f"{x['_inguid']}/{x['_hostname']}":x for x in result})
         except:
             pass
 
