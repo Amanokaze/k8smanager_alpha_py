@@ -11,7 +11,7 @@ INSERT_TABLEINFO = "insert into kubetableinfo values ('{1}', 0, {0}, {0}, 0);"
 INSERT_TABLE = "insert into {} ({}) values ({});"
 SELECT_TABLE = "select {} from {} where {} {};"
 UPDATE_TABLE = "update {0} set {1}, _updatetime={4} where {2}={3};"
-UPDATE_ENABLED = "update {0} set _enabled=0 and _updatetime={3} where {1} in ({2});"
+UPDATE_ENABLED = "update {0} set _enabled=0, _updatetime={3} where {1} in ({2});"
 
 DELETE_LASTREALTIMEPERF = "delete from kubelastrealtimeperf where _nodeid={};"
 

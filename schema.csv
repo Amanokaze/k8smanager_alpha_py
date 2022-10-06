@@ -101,14 +101,13 @@ reference,kubeinginfo,_updatetime,int8,NOT NULL,
 reference,kubeinghostinfo,_inghostid,serial,NOT NULL,PRIMARY KEY
 reference,kubeinghostinfo,_ingid,int8,NOT NULL
 reference,kubeinghostinfo,_backendtype,text,NOT NULL
+reference,kubeinghostinfo,_backendname,text,NULL
 reference,kubeinghostinfo,_hostname,text,NOT NULL,DEFAULT '*'
 reference,kubeinghostinfo,_pathtype,text,NULL
 reference,kubeinghostinfo,_path,text,NULL
-reference,kubeinghostinfo,_svcname,text,NULL
 reference,kubeinghostinfo,_svcport,int8,NULL
 reference,kubeinghostinfo,_rscapigroup,text,NULL
 reference,kubeinghostinfo,_rsckind,text,NULL
-reference,kubeinghostinfo,_rscname,text,NULL
 reference,kubeinghostinfo,_enabled,int8,NOT NULL,DEFAULT 0
 reference,kubeinghostinfo,_createdtime,int8,NOT NULL,
 reference,kubeinghostinfo,_updatetime,int8,NOT NULL,

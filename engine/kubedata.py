@@ -105,7 +105,7 @@ class Kubedata:
 
                 try:
                     node_stats = api.connect_get_node_proxy_with_path(nodename, "stats/summary")
-                    node_stats_json = json.loads(node_stats.replace("'",'"'))
+                    node_stats_json = json.loads(node_stats.strip("'<>() ").replace("'",'"'))
                     node_metric_data[nodename] = node_stats_json['node']
                     pod_metric_data[nodename] = node_stats_json['pods']
                 except client.rest.ApiException as e:
@@ -233,27 +233,25 @@ class Kubedata:
                     if dbe.service:
                         ing_host_data.append({
                             "backendtype": "service",
+                            "backendname": dbe.service.name,
                             "hostname": "*",
                             "pathtype": "",
                             "path": "",
-                            "svcname": dbe.service.name,
                             "svcport": dbe.service.port.number,
                             "rscapigroup": "",
                             "rsckind": "",
-                            "rscname": "",
                             "uid": ing.metadata.uid
                         })
                     elif dbe.resrouce:
                         ing_host_data.append({
                             "backendtype": "resource",
+                            "backendname": dbe.resource.name,
                             "hostname": "*",
                             "pathtype": "",
                             "path": "",
-                            "svcname": "",
                             "svcport": "",
                             "rscapigroup": dbe.resource.api_group,
                             "rsckind": dbe.resource.kind,
-                            "rscname": dbe.resource.name,
                             "uid": ing.metadata.uid
                         })
                 for rule in ing.spec.rules:
@@ -262,27 +260,25 @@ class Kubedata:
                         if path.backend.service:
                             ing_host_data.append({
                                 "backendtype": "service",
+                                "backendname": path.backend.service.name,
                                 "hostname": hostname,
                                 "pathtype": path.path_type,
                                 "path": path.path,
-                                "svcname": path.backend.service.name,
                                 "svcport": path.backend.service.port.number,
                                 "rscapigroup": "",
                                 "rsckind": "",
-                                "rscname": "",
                                 "uid": ing.metadata.uid
                             })
                         elif path.backend.resource:
                             ing_host_data.append({
                                 "backendtype": "resource",
+                                "backendname": path.backend.resource.name,
                                 "hostname": hostname,
                                 "pathtype": path.path_type,
                                 "path": path.path,
-                                "svcname": "",
                                 "svcport": "",
                                 "rscapigroup": path.backend.resource.api_group,
                                 "rsckind": path.backend.resource.kind,
-                                "rscname": path.backend.resource.name,
                                 "uid": ing.metadata.uid
                             })
 
