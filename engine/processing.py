@@ -177,16 +177,33 @@ class Processing:
             self.update_resource_info(cursor, cur_dict, conn, basic_info["resource_info"])
 
     def update_reference_tables(self):
+        def resource_enabled(kind):
+            return self.resource_query_dict[kind]["_enabled"] == 1
+
         with self.db.get_resource_rdb() as (cursor, cur_dict, conn):
+            # Namespace, Node, Pod은 Enalbed 여부와는 상관없이 무조건 동작
             self.update_namespace_info(cursor, cur_dict, conn)
             self.update_node_info(cursor, cur_dict, conn)
             self.update_node_systemcontainer_info(cursor, cur_dict, conn)
-            self.update_service_info(cursor, cur_dict, conn)
-            self.update_ingress_info(cursor, cur_dict, conn)
-            self.update_deployment_info(cursor, cur_dict, conn)
-            self.update_statefulset_info(cursor, cur_dict, conn)
-            self.update_daemonset_info(cursor, cur_dict, conn)
-            self.update_replicaset_info(cursor, cur_dict, conn)
+
+            if resource_enabled("Service"):
+                self.update_service_info(cursor, cur_dict, conn)
+
+            if resource_enabled("Ingress"):
+                self.update_ingress_info(cursor, cur_dict, conn)
+
+            if resource_enabled("Deployment"):
+                self.update_deployment_info(cursor, cur_dict, conn)
+
+            if resource_enabled("StatefulSet"):
+                self.update_statefulset_info(cursor, cur_dict, conn)
+
+            if resource_enabled("DaemonSet"):
+                self.update_daemonset_info(cursor, cur_dict, conn)
+
+            if resource_enabled("ReplicaSet"):
+                self.update_replicaset_info(cursor, cur_dict, conn)
+
             self.update_pod_and_container_info(cursor, cur_dict, conn)
             self.update_pod_device_info(cursor, cur_dict, conn)
 
@@ -263,7 +280,6 @@ class Processing:
 
         # Resource 입력은 빈(Empty) Resource에 한해서 신규 입력하도록 하며
         # Resource의 정보 변경 및 사용 여부(enabled)는 DB에서 수동으로 조절하도록 함
-
         try:
             new_resource_list = dict(filter(lambda x: x[0] not in self.resource_query_dict, resources.items()))
             
