@@ -17,6 +17,7 @@ DELETE_LASTREALTIMEPERF = "delete from kubelastrealtimeperf where _nodeid={};"
 
 SELECT_MANAGERINFO_IP = "select * from kubemanagerinfo where _ip='{}';"
 SELECT_CLUSTERINFO_IP_MGRID = "select * from kubeclusterinfo where _ip='{}' and _managerid={};"
+SELECT_RESOURCEINFO_CLUSTERID = "select * from kuberesourceinfo where _clusterid={};"
 SELECT_NAMESPACEINFO_CLUSTERID = "select * from kubensinfo where _clusterid={} and _enabled=1;"
 SELECT_NODEINFO_CLUSTERID = "select * from kubenodeinfo where _clusterid={} and _enabled=1;"
 SELECT_NODE_SYSCONTAINER_NODEID = "select nsc.*, n._nodename from kubenodesyscoinfo nsc, kubenodeinfo n where nsc._nodeid=n._nodeid and n._nodeid in ({});"

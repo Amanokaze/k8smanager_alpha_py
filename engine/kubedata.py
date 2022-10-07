@@ -9,6 +9,11 @@ DEFAULT_INFO = {
     "KUBE_MGR_ST_INTERVAL": 10,
     "KUBE_MGR_LT_INTERVAL": 600,
     "KUBE_CLUSTER_NAME": "kubernetes",
+    "KUBE_API_VERSION": "v1",
+    "KUBE_APIS_VERSION": "v1",
+    "DEFAULT_ENABLED_RESOURCES": [
+        'Namespace', 'Node', 'Pod', 'Service', 'Ingress', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Event', 'PersistentVolumeClaim', 'StorageClass'
+    ]
 }
 
 class Kubedata:
@@ -27,9 +32,6 @@ class Kubedata:
         self.node_metric_data = dict()
         self.pod_metric_data = dict()
 
-        self.cluster_address = str()
-        self.data_exist = False
-
         # Assign Initial Data
         self.log = log
 
@@ -39,6 +41,10 @@ class Kubedata:
         self.lt_interval = int(os.environ["KUBE_MGR_LT_INTERVAL"])  if "KUBE_MGR_LT_INTERVAL" in os.environ else DEFAULT_INFO["KUBE_MGR_LT_INTERVAL"]
         self.cluster_name = os.environ["KUBE_CLUSTER_NAME"] if "KUBE_CLUSTER_NAME" in os.environ else DEFAULT_INFO["KUBE_CLUSTER_NAME"]
 
+        self.cluster_address = str()
+        self.data_exist = False
+        self.resource_info = dict()
+
         # Kube Cluster 접속은 최초 1회만 이루어지며, Thread 별로 접속을 보장하지 않음
         self.cfg = client.Configuration()
         self.cfg.api_key['authorization'] = self.api_key
@@ -47,24 +53,92 @@ class Kubedata:
         self.cfg.verify_ssl = True
         self.cfg.ssl_ca_cert = 'ca.crt'
 
-    def get_api(self):
+        self.get_api_version()
+
+    def get_api_version(self):
         try:
-            self.api_version_info = client.CoreApi(client.ApiClient(self.cfg)).get_api_versions()
-            self.cluster_address = self.api_version_info.server_address_by_client_cid_rs[0].server_address.split(":")[0]
+            default_api_version = DEFAULT_INFO["KUBE_API_VERSION"]
+            default_apis_version = DEFAULT_INFO["KUBE_APIS_VERSION"]
 
-            core_api = client.CoreV1Api(client.ApiClient(self.cfg))
-            apps_api = client.AppsV1Api(client.ApiClient(self.cfg))
-            network_api = client.NetworkingV1Api(client.ApiClient(self.cfg))
+            api_version_info = client.CoreApi(client.ApiClient(self.cfg)).get_api_versions()
+            self.cluster_address = api_version_info.server_address_by_client_cid_rs[0].server_address.split(":")[0]
+            default_api_version = api_version_info.versions[0]
 
-            self.get_kube_ns_data(core_api)
-            self.get_kube_node_data(core_api)
-            self.get_kube_pod_data(core_api)
-            self.get_kube_svc_data(core_api)
-            self.get_kube_ing_data(network_api)
-            self.get_kube_ds_data(apps_api)
-            self.get_kube_rs_data(apps_api)
-            self.get_kube_deploy_data(apps_api)
-            self.get_kube_sts_data(apps_api)
+            def update_enabled(resource, enabled):
+                enabled_dict = {"enabled": 1 if enabled in DEFAULT_INFO["DEFAULT_ENABLED_RESOURCES"] else 0}
+                resource.update(enabled_dict)
+                return resource
+
+            # 신 버전이 추가되면 해당 분기문의 내용이 늘어나야 할 것
+            if default_api_version == "v1":
+                result = client.CoreV1Api(client.ApiClient(self.cfg)).get_api_resources()
+                api_resources = result.resources
+                api_resource_info = {
+                    "apiclass": "CoreV1Api",
+                    "version": result.group_version,
+                    "endpoint": "api/"+ result.group_version
+                }
+                self.resource_info.update(dict({x.kind:update_enabled(api_resource_info, x.kind) for x in api_resources}))
+
+            apis_version_info = client.ApisApi(client.ApiClient(self.cfg)).get_api_versions()
+            default_apis_version = apis_version_info.api_version
+
+            def get_resource_info(apiclass, data):
+                try:
+                    apis_resources = data.resources
+                    apis_resource_info = {
+                        "apiclass": apiclass,
+                        "version": data.api_version,
+                        "endpoint": "apis/"+ data.group_version
+                    }
+                    return dict({x.kind:update_enabled(apis_resource_info, x.kind) for x in apis_resources})
+                except: 
+                    return dict()
+
+            # 신 버전이 추가되면 해당 분기문의 내용이 늘어나야 할 것
+            if default_apis_version == "v1":
+                result = client.AppsV1Api(client.ApiClient(self.cfg)).get_api_resources()                    
+                self.resource_info.update(get_resource_info("AppsV1Api", result))
+
+                result = client.NetworkingV1Api(client.ApiClient(self.cfg)).get_api_resources()
+                self.resource_info.update(get_resource_info("NetworkingV1Api", result))
+
+                result = client.StorageV1Api(client.ApiClient(self.cfg)).get_api_resources()
+                self.resource_info.update(get_resource_info("StorageV1Api", result))
+        except Exception as e:
+            self.log.write('ERR', str(e))
+
+    def get_api(self, resources):
+        # API 유형 및 If 분기조건은 향후 버전 별로 추가될 수 있음
+        core_v1_api = client.CoreV1Api(client.ApiClient(self.cfg))
+        apps_v1_api = client.AppsV1Api(client.ApiClient(self.cfg))
+        network_v1_api = client.NetworkingV1Api(client.ApiClient(self.cfg))
+        storage_v1_api = client.StorageV1Api(client.ApiClient(self.cfg))
+
+        def get_apiclass(kind):
+            apiclass = resources[kind]["_apiclass"]
+
+            if apiclass == "CoreV1Api":
+                return core_v1_api
+            elif apiclass == "AppsV1Api":
+                return apps_v1_api
+            elif apiclass == "NetworkingV1Api":
+                return network_v1_api
+            elif apiclass == "StorageV1Api":
+                return storage_v1_api
+            else:
+                return None
+        
+        try:
+            self.get_kube_ns_data(get_apiclass("Namespace"))
+            self.get_kube_node_data(get_apiclass("Node"))
+            self.get_kube_pod_data(get_apiclass("Pod"))
+            self.get_kube_svc_data(get_apiclass("Service"))
+            self.get_kube_ing_data(get_apiclass("Ingress"))
+            self.get_kube_ds_data(get_apiclass("DaemonSet"))
+            self.get_kube_rs_data(get_apiclass("ReplicaSet"))
+            self.get_kube_deploy_data(get_apiclass("Deployment"))
+            self.get_kube_sts_data(get_apiclass("StatefulSet"))
 
             if self.node_data and self.ns_data:
                 self.data_exist = True

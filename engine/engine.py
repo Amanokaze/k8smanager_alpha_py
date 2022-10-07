@@ -81,23 +81,28 @@ class Engine:
         threading.Timer(self.kubedata.st_interval, self.thread_func).start()
         self.system_var.refresh_duration(self.kubedata.st_interval)
         
-        # Stats API를 사용해서 데이터를 가져오는 부분
-        self.kubedata.get_api()
-
         # API 기본 정보를 가져오는 부분
         kube_basic_info = {
             "manager_name": self.db.get_basic_info("managername"),
-            "manager_ip": self.db.get_basic_info("host")
+            "manager_ip": self.db.get_basic_info("host"),
+            "resource_info": self.kubedata.resource_info,
+            "cluster_name": self.kubedata.cluster_name,
+            "cluster_address": self.kubedata.cluster_address
         }
+
+        # DB Datbase check and get Resource Info 
+        self.processing = Processing(self.log, self.db, self.system_var)
+        self.processing.check_ontune_schema()
+        self.processing.update_ref_core_tables(kube_basic_info)
         
+        # Kubernetes Cluster 데이터를 가져오는 부분
+        self.kubedata.get_api(self.processing.resource_query_dict)
+
         # 데이터 가져오는 부분이 실패하면 onTune DB의 입력 의미가 없어지므로 Thread를 종료함
         if not self.kubedata.data_exist:
             return
 
         # onTune DB Data Processing
-        # Processing Class는 Engine 선언부가 아닌 Thread 단위로 선언해서 생성 후 처리 완료 시 해제되는 형태로 되어야 함
-        self.processing = Processing(self.log, self.db, self.system_var)
-        self.processing.check_ontune_schema()
-        self.processing.set_kube_data(self.kubedata, kube_basic_info)
+        self.processing.set_kube_data(self.kubedata)
         self.processing.update_reference_tables()
         self.processing.update_metric_tables()

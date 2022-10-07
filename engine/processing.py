@@ -9,6 +9,7 @@ class Processing:
         self.cluster_id = 0
         self.container_list = list()
 
+        self.resource_query_dict = dict()        # Key: resourcename
         self.namespace_query_dict = dict()       # Key: UID
         self.svc_query_dict = dict()             # Key: UID
         self.ing_query_dict = dict()             # Key: UID
@@ -33,7 +34,7 @@ class Processing:
             "index": dict()
         }
 
-    def set_kube_data(self, kubedata, basic_info):
+    def set_kube_data(self, kubedata):
         # Kube Data variables
         self.namespace_list = kubedata.ns_data
         self.node_list = kubedata.node_data
@@ -48,12 +49,7 @@ class Processing:
         self.node_metric_list = kubedata.node_metric_data
         self.pod_metric_list = kubedata.pod_metric_data
 
-        self.cluster_name = kubedata.cluster_name
-        self.cluster_address = kubedata.cluster_address
         self.lt_interval = kubedata.lt_interval
-
-        self.manager_name = basic_info["manager_name"]
-        self.manager_ip = basic_info["manager_ip"]
 
     def input_tableinfo(self, name, cursor, conn, ontunetime=0):
         ontunetime = self.get_ontunetime(cursor) if ontunetime == 0 else ontunetime
@@ -114,7 +110,7 @@ class Processing:
 
                 properties = list(filter(lambda x: x != "", row[2:]))
                 schema_object[schema_type][obj_name].append(properties)
-
+        
         with self.db.get_resource_rdb() as (cursor, _, conn):
             # Check Reference Tables
             for obj_name in schema_object["reference"]:
@@ -168,12 +164,20 @@ class Processing:
 
         self.schema_obj = schema_object
 
-    def update_reference_tables(self):
+    def update_ref_core_tables(self, basic_info):
         self.ref_process_flag = True
+        self.manager_name = basic_info["manager_name"]
+        self.manager_ip = basic_info["manager_ip"]
+        self.cluster_name = basic_info["cluster_name"]
+        self.cluster_address = basic_info["cluster_address"]
 
         with self.db.get_resource_rdb() as (cursor, cur_dict, conn):
             self.update_manager_info(cursor, conn)
             self.update_cluster_info(cursor, conn)
+            self.update_resource_info(cursor, cur_dict, conn, basic_info["resource_info"])
+
+    def update_reference_tables(self):
+        with self.db.get_resource_rdb() as (cursor, cur_dict, conn):
             self.update_namespace_info(cursor, cur_dict, conn)
             self.update_node_info(cursor, cur_dict, conn)
             self.update_node_systemcontainer_info(cursor, cur_dict, conn)
@@ -244,6 +248,48 @@ class Processing:
         if not self.cluster_id:
             self.log.write("ERROR", "Kubeclusterinfo has an error. Put data process is stopped.")
             self.ref_process_flag = False
+
+    def update_resource_info(self, cursor, cur_dict, conn, resources):
+        if not self.ref_process_flag:
+            return False
+
+        ontunetime = self.get_ontunetime(cursor)
+        
+        try:
+            cur_dict.execute(stmt.SELECT_RESOURCEINFO_CLUSTERID.format(self.cluster_id))
+            self.resource_query_dict = dict({x["_resourcename"]:x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        # Resource 입력은 빈(Empty) Resource에 한해서 신규 입력하도록 하며
+        # Resource의 정보 변경 및 사용 여부(enabled)는 DB에서 수동으로 조절하도록 함
+
+        try:
+            new_resource_list = dict(filter(lambda x: x[0] not in self.resource_query_dict, resources.items()))
+            
+            # New Namespace Insertion
+            for new_rsc in new_resource_list:
+                resource_data = dict(new_resource_list[new_rsc])
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kuberesourceinfo")
+                value_data = utils.insert_values([self.cluster_id, new_rsc] + list(resource_data.values())+[ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kuberesourceinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kuberesourceinfo", cursor, conn)
+                self.log.write("PUT", f"Kuberesourceinfo insertion is completed - {new_rsc}{resource_data}")
+
+            # New NS ID Update
+            try:
+                cur_dict.execute(stmt.SELECT_RESOURCEINFO_CLUSTERID.format(self.cluster_id))
+                result = cur_dict.fetchall()
+                self.resource_query_dict = dict({x["_resourcename"]:x for x in result})
+            except:
+                pass
+        except Exception as e:
+            conn.rollback()
+            self.log.write("ERROR", f"Kuberesourceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
 
     def update_namespace_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:

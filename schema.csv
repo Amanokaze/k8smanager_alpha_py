@@ -16,6 +16,15 @@ reference,kubeclusterinfo,_desc,text,NULL,
 reference,kubeclusterinfo,_ip,text,NOT NULL,
 reference,kubeclusterinfo,_createdtime,int8,NOT NULL,
 reference,kubeclusterinfo,_updatetime,int8,NOT NULL,
+reference,kuberesourceinfo,_resourceid,serial,NOT NULL,PRIMARY KEY
+reference,kuberesourceinfo,_clusterid,int8,NOT NULL,
+reference,kuberesourceinfo,_resourcename,text,NOT NULL
+reference,kuberesourceinfo,_apiclass,text,NOT NULL
+reference,kuberesourceinfo,_version,text,NOT NULL
+reference,kuberesourceinfo,_endpoint,text,NOT NULL
+reference,kuberesourceinfo,_enabled,int8,NOT NULL,DEFAULT 1
+reference,kuberesourceinfo,_createdtime,int8,NOT NULL,
+reference,kuberesourceinfo,_updatetime,int8,NOT NULL,
 reference,kubensinfo,_nsid,serial,NOT NULL,PRIMARY KEY
 reference,kubensinfo,_clusterid,int8,NOT NULL,
 reference,kubensinfo,_nsname,text,NOT NULL,
