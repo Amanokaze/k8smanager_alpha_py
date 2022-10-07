@@ -129,16 +129,32 @@ class Kubedata:
             else:
                 return None
         
+        def resource_enabled(kind):
+            return resources[kind]["_enabled"] == 1
+            
         try:
+            # Namespace, Node, Pod은 Enalbed 여부와는 상관없이 무조건 동작
             self.get_kube_ns_data(get_apiclass("Namespace"))
             self.get_kube_node_data(get_apiclass("Node"))
             self.get_kube_pod_data(get_apiclass("Pod"))
-            self.get_kube_svc_data(get_apiclass("Service"))
-            self.get_kube_ing_data(get_apiclass("Ingress"))
-            self.get_kube_ds_data(get_apiclass("DaemonSet"))
-            self.get_kube_rs_data(get_apiclass("ReplicaSet"))
-            self.get_kube_deploy_data(get_apiclass("Deployment"))
-            self.get_kube_sts_data(get_apiclass("StatefulSet"))
+
+            if resource_enabled("Service"):
+                self.get_kube_svc_data(get_apiclass("Service"))
+
+            if resource_enabled("Ingress"):
+                self.get_kube_ing_data(get_apiclass("Ingress"))
+            
+            if resource_enabled("DaemonSet"):
+                self.get_kube_ds_data(get_apiclass("DaemonSet"))
+
+            if resource_enabled("ReplicaSet"):
+                self.get_kube_rs_data(get_apiclass("ReplicaSet"))
+
+            if resource_enabled("Deployment"):
+                self.get_kube_deploy_data(get_apiclass("Deployment"))
+
+            if resource_enabled("StatefulSet"):
+                self.get_kube_sts_data(get_apiclass("StatefulSet"))
 
             if self.node_data and self.ns_data:
                 self.data_exist = True
