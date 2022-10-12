@@ -8,6 +8,7 @@ class Processing:
         self.manager_id = 0
         self.cluster_id = 0
         self.container_list = list()
+        self.label_selector_list = list()
 
         self.resource_query_dict = dict()        # Key: resourcename
         self.namespace_query_dict = dict()       # Key: UID
@@ -23,6 +24,9 @@ class Processing:
         self.pod_query_dict = dict()             # Key: UID
         self.container_query_dict = dict()       # Key: Pod UID
         self.pod_device_query_dict = dict()      # Key: Devicetype
+        self.lv_query_dict = dict()              # Key: keyvalue
+        self.label_query_dict = dict()           # Key: kinduid:lbvalueid
+        self.selector_query_dict = dict()        # Key: kinduid:lbvalueid
 
         self.log = log
         self.db = db
@@ -92,6 +96,19 @@ class Processing:
                 return p
 
             return None
+
+    def set_label_selector(self, _type, _kind, _uid, data):
+        for elem in data.items():
+            self.label_selector_list.append({
+                "type": _type,
+                "kind": _kind,
+                "uid": _uid,
+                "keyvalue": ":".join(elem),
+                "key": elem[0],
+                "value": elem[1]
+            })
+
+
 
     def check_ontune_schema(self):
         # Load onTune Schema
@@ -206,13 +223,13 @@ class Processing:
 
             self.update_pod_and_container_info(cursor, cur_dict, conn)
             self.update_pod_device_info(cursor, cur_dict, conn)
+            self.update_label_selector_info(cursor, cur_dict, conn)
 
     def update_metric_tables(self):
         with self.db.get_resource_rdb() as (cursor, _, conn):
             self.update_lastrealtimeperf_table(cursor, conn)
             self.update_realtime_table(cursor, conn)
             self.update_average_table(cursor, conn)
-
 
     def update_manager_info(self, cursor, conn):
         if not self.ref_process_flag:
@@ -271,7 +288,7 @@ class Processing:
             return False
 
         ontunetime = self.get_ontunetime(cursor)
-        
+        #print(resources)
         try:
             cur_dict.execute(stmt.SELECT_RESOURCEINFO_CLUSTERID.format(self.cluster_id))
             self.resource_query_dict = dict({x["_resourcename"]:x for x in cur_dict.fetchall()})
@@ -305,7 +322,6 @@ class Processing:
             conn.rollback()
             self.log.write("ERROR", f"Kuberesourceinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
-
 
     def update_namespace_info(self, cursor, cur_dict, conn):
         if not self.ref_process_flag:
@@ -494,8 +510,8 @@ class Processing:
                 svc_ns_name = svc_data.pop("nsname")                
                 svc_data["nsid"] = self.namespace_query_dict[svc_ns_name]["_nsid"]
 
-                svc_selector = svc_data.pop("selector")
-                svc_labels = svc_data.pop("label")
+                self.set_label_selector("selector", "Service", new_svc, svc_data.pop("selector"))
+                self.set_label_selector("label", "Service", new_svc, svc_data.pop("label"))
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubesvcinfo")
                 value_data = utils.insert_values(list(svc_data.values())+[1, ontunetime, ontunetime])
@@ -562,7 +578,7 @@ class Processing:
                 ing_ns_name = ing_data.pop("nsname")                
                 ing_data["nsid"] = self.namespace_query_dict[ing_ns_name]["_nsid"]
 
-                ing_labels = ing_data.pop("label")
+                self.set_label_selector("label", "Ingress", new_ing, ing_data.pop("label"))
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubeinginfo")
                 value_data = utils.insert_values(list(ing_data.values())+[1, ontunetime, ontunetime])
@@ -641,8 +657,8 @@ class Processing:
                 deploy_ns_name = deploy_data.pop("nsname")
                 deploy_data["nsid"] = self.namespace_query_dict[deploy_ns_name]["_nsid"]
 
-                deploy_selector = deploy_data.pop("selector")
-                deploy_labels = deploy_data.pop("label")
+                self.set_label_selector("selector", "Deployment", new_deploy, deploy_data.pop("selector"))
+                self.set_label_selector("label", "Deployment", new_deploy, deploy_data.pop("label"))
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubedeployinfo")
                 value_data = utils.insert_values(list(deploy_data.values())+[1, ontunetime, ontunetime])
@@ -696,8 +712,8 @@ class Processing:
                 sts_ns_name = sts_data.pop("nsname")
                 sts_data["nsid"] = self.namespace_query_dict[sts_ns_name]["_nsid"]
 
-                sts_selector = sts_data.pop("selector")
-                sts_labels = sts_data.pop("label")
+                self.set_label_selector("selector", "StatefulSet", new_sts, sts_data.pop("selector"))
+                self.set_label_selector("label", "StatefulSet", new_sts, sts_data.pop("label"))
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubestsinfo")
                 value_data = utils.insert_values(list(sts_data.values())+[1, ontunetime, ontunetime])
@@ -749,8 +765,8 @@ class Processing:
                 ds_ns_name = ds_data.pop("nsname")
                 ds_data["nsid"] = self.namespace_query_dict[ds_ns_name]["_nsid"]
 
-                ds_selector = ds_data.pop("selector")
-                ds_labels = ds_data.pop("label")
+                self.set_label_selector("selector", "DaemonSet", new_ds, ds_data.pop("selector"))
+                self.set_label_selector("label", "DaemonSet", new_ds, ds_data.pop("label"))
 
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubedsinfo")
                 value_data = utils.insert_values(list(ds_data.values())+[1, ontunetime, ontunetime])
@@ -802,8 +818,8 @@ class Processing:
                 rs_ref_uid = rs_data.pop("refuid")
                 rs_data["nsid"] = self.namespace_query_dict[rs_ns_name]["_nsid"]
 
-                rs_selector = rs_data.pop("selector")
-                rs_labels = rs_data.pop("label")
+                self.set_label_selector("selector", "ReplicaSet", new_rs, rs_data.pop("selector"))
+                self.set_label_selector("label", "ReplicaSet", new_rs, rs_data.pop("label"))
 
                 if rs_data["refkind"] == "Deployment":
                     rs_data["refid"] = self.deploy_query_dict[rs_ref_uid]["_deployid"]
@@ -875,7 +891,8 @@ class Processing:
                 pod_node_name = pod_data.pop("nodename")
                 pod_ns_name = pod_data.pop("nsname")
                 pod_ref_uid = pod_data.pop("refuid")
-                pod_labels = pod_data.pop("label")
+
+                self.set_label_selector("label", "Pod", new_pod, pod_data.pop("label"))
 
                 pod_data["nsid"] = self.namespace_query_dict[pod_ns_name]["_nsid"] if pod_ns_name else 0
                 pod_data["nodeid"] = self.node_query_dict[pod_node_name]["_nodeid"] if pod_node_name else 0
@@ -1017,6 +1034,121 @@ class Processing:
         except Exception as e:
             conn.rollback()
             self.log.write("ERROR", f"Kubedeviceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
+    def update_label_selector_info(self, cursor, cur_dict, conn):
+        if not self.ref_process_flag:
+            return False
+
+        ontunetime = self.get_ontunetime(cursor)
+        labelvalue_list = set(x["keyvalue"] for x in self.label_selector_list)
+
+        # Update Labelvalue Info
+        try:
+            lv_query_list = list()
+            try:       
+                cur_dict.execute(stmt.SELECT_LABELVALUEINFO)
+                lv_query_list = set(x["_keyvalue"] for x in cur_dict.fetchall())
+            except:
+                pass
+
+            new_labelvalue_list = list(filter(lambda x: x not in lv_query_list, labelvalue_list))
+            
+            for _kv in new_labelvalue_list:
+                _key, _value = _kv.split(":")
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubelabelvalueinfo")
+                value_data = utils.insert_values([_kv, _key, _value, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubelabelvalueinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubelabelvalueinfo", cursor, conn)
+                self.log.write("PUT", f"Kubelabelvalueinfo insertion is completed - {_kv}")
+
+            try:       
+                cur_dict.execute(stmt.SELECT_LABELVALUEINFO)
+                self.lv_query_dict = dict({x["_keyvalue"]:x for x in cur_dict.fetchall()})
+            except:
+                pass
+        except Exception as e:
+            conn.rollback()
+            self.log.write("ERROR", f"Kubelabelvalueinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
+        # Get Label/Selector Info and change from list to dict
+        label_selector_dict = dict({f"{x['uid']}:{x['keyvalue']}":x for x in self.label_selector_list})
+
+        # Update Label Info
+        try:
+            cur_dict.execute(stmt.SELECT_LABELINFO)
+            self.label_query_dict = dict({f"{x['_kinduid']:x['_keyvalue']}":x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        try:
+            label_dict = dict(filter(lambda x: x[1]["type"] == "label", label_selector_dict.items()))
+            old_label_list = dict(filter(lambda x: x[0] not in label_dict, self.label_query_dict.items()))
+            new_label_list = dict(filter(lambda x: x[0] not in self.label_query_dict, label_dict.items()))
+            old_label_id_list = list(str(x[1]["_labelid"]) for x in old_label_list.items())
+
+            for new_label in new_label_list:
+                lb_data = dict(new_label_list[new_label])
+
+                _kind = lb_data["kind"]
+                _uid = lb_data["uid"]
+                _lbvalueid = self.lv_query_dict[lb_data["keyvalue"]]["_lbvalueid"]
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubelabelinfo")
+                value_data = utils.insert_values([_kind, _uid, _lbvalueid, 1, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubelabelinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubelabelinfo", cursor, conn)
+                self.log.write("PUT", f"Kubelabelinfo insertion is completed - {new_label}")
+
+            # Old rs Update
+            if len(old_label_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubelabelinfo", "_labelid", ",".join(old_label_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubelabelinfo", cursor, conn)
+        except Exception as e:
+            conn.rollback()
+            self.log.write("ERROR", f"Kubelabelinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
+        # Update Selector Info
+        try:
+            cur_dict.execute(stmt.SELECT_SELECTORINFO)
+            self.selector_query_dict = dict({f"{x['_kinduid']:x['_keyvalue']}":x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        try:
+            selector_dict = dict(filter(lambda x: x[1]["type"] == "selector", label_selector_dict.items()))
+            old_selector_list = dict(filter(lambda x: x[0] not in selector_dict, self.selector_query_dict.items()))
+            new_selector_list = dict(filter(lambda x: x[0] not in self.selector_query_dict, selector_dict.items()))
+            old_selector_id_list = list(str(x[1]["_selectorid"]) for x in old_selector_list.items())
+            
+            for new_selector in new_selector_list:
+                lb_data = dict(new_selector_list[new_selector])
+
+                _kind = lb_data["kind"]
+                _uid = lb_data["uid"]
+                _lbvalueid = self.lv_query_dict[lb_data["keyvalue"]]["_lbvalueid"]
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubeselectorinfo")
+                value_data = utils.insert_values([_kind, _uid, _lbvalueid, 1, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubeselectorinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubeselectorinfo", cursor, conn)
+                self.log.write("PUT", f"Kubeselectorinfo insertion is completed - {new_selector}")
+
+            # Old rs Update
+            if len(old_selector_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubeselectorinfo", "_selectorid", ",".join(old_selector_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubeselectorinfo", cursor, conn)
+        except Exception as e:
+            conn.rollback()
+            self.log.write("ERROR", f"Kubeselectorinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_lastrealtimeperf_table(self, cursor, conn):

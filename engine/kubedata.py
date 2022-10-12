@@ -1,5 +1,6 @@
 import os
 import json
+import copy
 from kubernetes import client
 from engine import utils
 
@@ -64,10 +65,11 @@ class Kubedata:
             self.cluster_address = api_version_info.server_address_by_client_cid_rs[0].server_address.split(":")[0]
             default_api_version = api_version_info.versions[0]
 
-            def update_enabled(resource, enabled):
-                enabled_dict = {"enabled": 1 if enabled in DEFAULT_INFO["DEFAULT_ENABLED_RESOURCES"] else 0}
-                resource.update(enabled_dict)
-                return resource
+            def update_enabled(resource, kind):
+                enabled_dict = {"enabled": 1 if kind in DEFAULT_INFO["DEFAULT_ENABLED_RESOURCES"] else 0}
+                resource_info = copy.deepcopy(resource)
+                resource_info.update(enabled_dict)
+                return resource_info
 
             # 신 버전이 추가되면 해당 분기문의 내용이 늘어나야 할 것
             if default_api_version == "v1":
@@ -175,6 +177,7 @@ class Kubedata:
                     "uid": node.metadata.uid,
                     "name": nodename,
                     "nameext": nodename,
+                    "nodetype": node.metadata.labels["node"],
                     "enabled": 1,
                     "state": 1,
                     "connected": 1,
@@ -240,12 +243,18 @@ class Kubedata:
                     elif "kubernetes.io/config.mirror" in pod.metadata.annotations:
                         annotation = pod.metadata.annotations["kubernetes.io/config.mirror"]
 
+                node_name = pod.spec.node_name
+                node_type = self.node_data[node_name]["nodetype"]
+                pod_name = pod.metadata.name
+
+                static_pod_name = pod_name[:-len(node_name)-1] if node_type == "master" and pod_name[-len(node_name):] == node_name else str()
+                
                 pod_data[pod.metadata.uid] = {
                     "nodeid": 0,
                     "nsid": 0,
                     "uid": pod.metadata.uid,
                     "annotationuid": annotation,
-                    "name": pod.metadata.name,
+                    "name": pod_name,
                     "starttime": utils.datetime_to_timestampz(pod.metadata.creation_timestamp),
                     "restartpolicy": pod.spec.restart_policy, 
                     "serviceaccount": pod.spec.service_account,
@@ -255,7 +264,8 @@ class Kubedata:
                     "restartcount": restartcount,
                     "restarttime": restarttime,
                     "condition": conditions,
-                    "nodename": pod.spec.node_name,
+                    "staticpod": static_pod_name,
+                    "nodename": node_name,
                     "nsname": pod.metadata.namespace,
                     "refkind": pod.metadata.owner_references[0].kind if pod.metadata.owner_references else "",
                     "refid": 0,
@@ -314,6 +324,7 @@ class Kubedata:
         try:
             ingresses = api.list_ingress_for_all_namespaces()
             ing_data = dict()
+
             for ing in ingresses.items:
                 ing_host_data = list()
 
@@ -385,7 +396,7 @@ class Kubedata:
 
             self.log.write("GET", "Kube Ingress Data Import is completed.")
 
-            self.ing_data = ing_data                
+            self.ing_data = ing_data 
         except Exception as e:
             self.log.write("Error", str(e))
 
@@ -407,7 +418,7 @@ class Kubedata:
                     "updated": utils.nvl_zero(ds.status.updated_number_scheduled),
                     "available": utils.nvl_zero(ds.status.number_available),
                     "label": ds.metadata.labels if ds.metadata.labels else dict(),
-                    "selector": ds.spec.selector if ds.spec.selector else dict(),
+                    "selector": ds.spec.selector.match_labels if ds.spec.selector else dict(),
                     "nsname": ds.metadata.namespace
                 }
 
@@ -434,7 +445,7 @@ class Kubedata:
                     "availablers": utils.nvl_zero(rs.status.available_replicas),
                     "observedgen": utils.nvl_zero(rs.status.observed_generation),
                     "label": rs.metadata.labels if rs.metadata.labels else dict(),
-                    "selector": rs.spec.selector if rs.spec.selector else dict(),
+                    "selector": rs.spec.selector.match_labels if rs.spec.selector else dict(),
                     "refkind": rs.metadata.owner_references[0].kind if rs.metadata.owner_references else "",
                     "refid": 0,                    
                     "refuid": rs.metadata.owner_references[0].uid if rs.metadata.owner_references else 0,
@@ -465,7 +476,7 @@ class Kubedata:
                     "availablers": utils.nvl_zero(deploy.status.available_replicas),
                     "observedgen": utils.nvl_zero(deploy.status.observed_generation),
                     "label": deploy.metadata.labels if deploy.metadata.labels else dict(),
-                    "selector": deploy.spec.selector if deploy.spec.selector else dict(),
+                    "selector": deploy.spec.selector.match_labels if deploy.spec.selector else dict(),
                     "nsname": deploy.metadata.namespace
                 }
 
@@ -491,7 +502,7 @@ class Kubedata:
                     "readyrs": utils.nvl_zero(sts.status.ready_replicas),
                     "availablers": utils.nvl_zero(sts.status.available_replicas),
                     "label": sts.metadata.labels if sts.metadata.labels else dict(),
-                    "selector": sts.spec.selector if sts.spec.selector else dict(),
+                    "selector": sts.spec.selector.match_labels if sts.spec.selector else dict(),
                     "nsname": sts.metadata.namespace
                 }
 

@@ -34,8 +34,10 @@ SELECT_PODINFO_NODEID = "select * from kubepodinfo where _nodeid in ({}) and _en
 SELECT_CONTAINERINFO_CLUSTERID = "select c.*, p._uid as _poduid from kubecontainerinfo c, kubepodinfo p, kubenodeinfo n where c._podid=p._podid and p._nodeid=n._nodeid and n._clusterid={} and n._enabled=1 and p._enabled=1 and c._enabled=1 order by p._podid, c._containername;"
 SELECT_CONTAINERINFO_NODEID = "select c.*, p._uid as _poduid, n._nodename from kubecontainerinfo c, kubepodinfo p, kubenodeinfo n where c._podid=p._podid and p._nodeid=n._nodeid and p._enabled=1 and p._nodeid in ({});"
 SELECT_PODDEVICEINFO_DEVICETYPE = "select * from kubepoddeviceinfo where _devicetype='{}';"
-
 SELECT_NODEINFO_MGRIP = "select n.* from kubenodeinfo n, kubeclusterinfo c, kubemanagerinfo m where m._managerid = c._managerid and c._clusterid = n._clusterid and m._managerid = n._managerid and n._enabled=1 and m._ip='{}';"
+SELECT_LABELVALUEINFO = "select * from kubelabelvalueinfo;"
+SELECT_LABELINFO = "select l.*, lv._keyvalue from kubelabelinfo l, kubelabelvalueinfo lv where lv._lbvalueid = l._lbvalueid and l._enabled=1;"
+SELECT_SELECTORINFO = "select s.*, lv._keyvalue from kubeselectorinfo s, kubelabelvalueinfo lv where lv._lbvalueid = s._lbvalueid and s._enabled=1;"
 
 SELECT_VIEWER_OVERALL = """SELECT n._nodename, p.*
   FROM kubelastrealtimeperf p, kubenodeinfo n
