@@ -13,7 +13,7 @@ DEFAULT_INFO = {
     "KUBE_API_VERSION": "v1",
     "KUBE_APIS_VERSION": "v1",
     "DEFAULT_ENABLED_RESOURCES": [
-        'Namespace', 'Node', 'Pod', 'Service', 'Ingress', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Event', 'PersistentVolumeClaim', 'StorageClass'
+        'Namespace', 'Node', 'Pod', 'Service', 'Ingress', 'Deployment', 'StatefulSet', 'DaemonSet', 'ReplicaSet', 'Event', 'PersistentVolumeClaim', 'StorageClass', 'PersistentVolume'
     ]
 }
 
@@ -29,6 +29,9 @@ class Kubedata:
         self.rs_data = dict()
         self.deploy_data = dict()
         self.sts_data = dict()
+        self.pvc_data = dict()
+        self.event_data = dict()
+        self.sc_data = dict()
 
         self.node_metric_data = dict()
         self.pod_metric_data = dict()
@@ -140,6 +143,9 @@ class Kubedata:
             self.get_kube_node_data(get_apiclass("Node"))
             self.get_kube_pod_data(get_apiclass("Pod"))
 
+            if resource_enabled("StorageClass"):
+                self.get_kube_sc_data(get_apiclass("StorageClass"))
+
             if resource_enabled("Service"):
                 self.get_kube_svc_data(get_apiclass("Service"))
 
@@ -157,6 +163,12 @@ class Kubedata:
 
             if resource_enabled("StatefulSet"):
                 self.get_kube_sts_data(get_apiclass("StatefulSet"))
+
+            if resource_enabled("PersistentVolumeClaim"):
+                self.get_kube_pvc_data(get_apiclass("PersistentVolumeClaim"))
+
+            if resource_enabled("Event"):
+                self.get_kube_event_data(get_apiclass("Event"))
 
             if self.node_data and self.ns_data:
                 self.data_exist = True
@@ -511,3 +523,103 @@ class Kubedata:
             self.sts_data = sts_data                
         except Exception as e:
             self.log.write("Error", str(e))
+
+    def get_kube_pvc_data(self, api):
+        try:
+            persistentvolumeclaims = api.list_persistent_volume_claim_for_all_namespaces()
+            persistentvolume = api.list_persistent_volume()
+            pvc_data = dict()
+            pv_data = dict({x.spec.claim_ref.uid:x for x in persistentvolume.items})
+            
+            def getAccessModes(accessmodes):
+                am_abbrs = list()
+                for am in accessmodes:
+                    if am == "ReadWriteOnce":
+                        am_abbrs.append("RWO")
+                    elif am == "ReadOnlyMany":
+                        am_abbrs.append("ROX")
+                    elif am == "ReadWriteMany":
+                        am_abbrs.append("RWX")
+                    elif am == "ReadWriteOncePod":
+                        am_abbrs.append("RWOP")
+                return ",".join(am_abbrs)
+
+
+            for pvc in persistentvolumeclaims.items:
+                pv = pv_data[pvc.metadata.uid]
+                pvc_data[pvc.metadata.uid] = {
+                    "nsid": 0,
+                    "starttime": utils.datetime_to_timestampz(pvc.metadata.creation_timestamp),
+                    "pvcname": pvc.metadata.name,
+                    "pvcuid": pvc.metadata.uid,
+                    "pvcaccessmodes": getAccessModes(pvc.spec.access_modes),
+                    "pvcreqstorage": utils.change_quantity_unit(pvc.spec.resources.requests["storage"]),
+                    "pvcstatus": pvc.status.phase,
+                    "pvcscid": 0,
+                    "pvname": pv.metadata.name,
+                    "pvuid": pv.metadata.uid,
+                    "pvaccessmodes": getAccessModes(pv.spec.access_modes),
+                    "pvcapacity": utils.change_quantity_unit(pv.spec.capacity["storage"]),
+                    "pvreclaimpolicy": pv.spec.persistent_volume_reclaim_policy,
+                    "pvstatus": pv.status.phase,
+                    "pvcscname": pvc.spec.storage_class_name,
+                    "nsname": pvc.metadata.namespace
+                }
+
+            self.log.write("GET", "Kube PersistentVolume/PVC Data Import is completed.")
+
+            self.pvc_data = pvc_data                
+        except Exception as e:
+            self.log.write("Error", str(e))
+
+    def get_kube_event_data(self, api):
+        try:
+            events = api.list_event_for_all_namespaces()
+            event_data = dict()
+
+            for event in events.items:
+                event_data[event.metadata.uid] = {
+                    "nsid": 0,
+                    "name": event.metadata.name,
+                    "uid": event.metadata.uid,
+                    "firsttime": utils.datetime_to_timestampz(event.first_timestamp),
+                    "lasttime": utils.datetime_to_timestampz(event.last_timestamp),
+                    "eventtype": event.type,
+                    "eventcount": utils.nvl_zero(event.count),
+                    "involvedobj": event.involved_object.kind,
+                    "involveduid": event.involved_object.uid,
+                    "srccomponent": event.source.component if event.source.component else "",
+                    "srchost": event.source.host if event.source.host else "",
+                    "reason": event.reason,
+                    "message": event.message,
+                    "nsname": event.metadata.namespace
+                }
+
+            self.log.write("GET", "Kube Event Data Import is completed.")
+
+            self.event_data = event_data                
+        except Exception as e:
+            self.log.write("Error", str(e))
+
+    def get_kube_sc_data(self, api):
+        try:
+            storageclasses = api.list_storage_class()
+            sc_data = dict()
+
+            for sc in storageclasses.items:
+                sc_data[sc.metadata.name] = {
+                    "name": sc.metadata.name,
+                    "uid": sc.metadata.uid,
+                    "starttime": utils.datetime_to_timestampz(sc.metadata.creation_timestamp),
+                    "provisioner": sc.provisioner,
+                    "reclaimpolicy": sc.reclaim_policy,
+                    "volumebindingmode": sc.volume_binding_mode,
+                    "allowvolumeexp": sc.allow_volume_expansion if sc.allow_volume_expansion else False
+                }
+
+            self.log.write("GET", "Kube StorageClass Data Import is completed.")
+
+            self.sc_data = sc_data                
+        except Exception as e:
+            self.log.write("Error", str(e))
+

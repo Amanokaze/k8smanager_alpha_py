@@ -11,7 +11,8 @@ class Processing:
         self.label_selector_list = list()
 
         self.resource_query_dict = dict()        # Key: resourcename
-        self.namespace_query_dict = dict()       # Key: UID
+        self.sc_query_dict = dict()              # Key: scname
+        self.namespace_query_dict = dict()       # Key: nsname
         self.svc_query_dict = dict()             # Key: UID
         self.ing_query_dict = dict()             # Key: UID
         self.ing_host_query_dict = dict()        # Key: Ingress UID
@@ -27,6 +28,8 @@ class Processing:
         self.lv_query_dict = dict()              # Key: keyvalue
         self.label_query_dict = dict()           # Key: kinduid:lbvalueid
         self.selector_query_dict = dict()        # Key: kinduid:lbvalueid
+        self.pvc_query_dict = dict()             # Key: UID
+        self.event_query_dict = dict()           # Key: UID
 
         self.log = log
         self.db = db
@@ -42,6 +45,7 @@ class Processing:
         # Kube Data variables
         self.namespace_list = kubedata.ns_data
         self.node_list = kubedata.node_data
+        self.sc_list = kubedata.sc_data
         self.pod_list = kubedata.pod_data
         self.svc_list = kubedata.svc_data
         self.ing_list = kubedata.ing_data
@@ -49,6 +53,8 @@ class Processing:
         self.sts_list = kubedata.sts_data
         self.ds_list = kubedata.ds_data
         self.rs_list = kubedata.rs_data
+        self.pvc_list = kubedata.pvc_data
+        self.event_list = kubedata.event_data
 
         self.node_metric_list = kubedata.node_metric_data
         self.pod_metric_list = kubedata.pod_metric_data
@@ -107,8 +113,6 @@ class Processing:
                 "key": elem[0],
                 "value": elem[1]
             })
-
-
 
     def check_ontune_schema(self):
         # Load onTune Schema
@@ -203,6 +207,9 @@ class Processing:
             self.update_node_info(cursor, cur_dict, conn)
             self.update_node_systemcontainer_info(cursor, cur_dict, conn)
 
+            if resource_enabled("StorageClass"):
+                self.update_storage_class_info(cursor, cur_dict, conn)
+
             if resource_enabled("Service"):
                 self.update_service_info(cursor, cur_dict, conn)
 
@@ -220,6 +227,12 @@ class Processing:
 
             if resource_enabled("ReplicaSet"):
                 self.update_replicaset_info(cursor, cur_dict, conn)
+
+            if resource_enabled("PersistentVolumeClaim"):
+                self.update_persistent_volume_claim_info(cursor, cur_dict, conn)
+
+            if resource_enabled("Event"):
+                self.update_event_info(cursor, cur_dict, conn)
 
             self.update_pod_and_container_info(cursor, cur_dict, conn)
             self.update_pod_device_info(cursor, cur_dict, conn)
@@ -254,7 +267,7 @@ class Processing:
             self.manager_id = result[0]
 
         if not self.manager_id:
-            self.log.write("ERROR", "Kubemanagerinfo has an error. Put data process is stopped.")
+            self.log.write("Error", "Kubemanagerinfo has an error. Put data process is stopped.")
             self.ref_process_flag = False
 
     def update_cluster_info(self, cursor, conn):
@@ -280,7 +293,7 @@ class Processing:
             self.cluster_id = result[0]
 
         if not self.cluster_id:
-            self.log.write("ERROR", "Kubeclusterinfo has an error. Put data process is stopped.")
+            self.log.write("Error", "Kubeclusterinfo has an error. Put data process is stopped.")
             self.ref_process_flag = False
 
     def update_resource_info(self, cursor, cur_dict, conn, resources):
@@ -320,7 +333,53 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kuberesourceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kuberesourceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
+    def update_storage_class_info(self, cursor, cur_dict, conn):
+        if not self.ref_process_flag:
+            return False
+
+        ontunetime = self.get_ontunetime(cursor)
+
+        try:
+            cur_dict.execute(stmt.SELECT_SCINFO_CLUSTERID.format(self.cluster_id))
+            self.sc_query_dict = dict({x["_scname"]:x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        try:
+            old_sc_list = dict(filter(lambda x: x[0] not in self.sc_list, self.sc_query_dict.items()))
+            new_sc_list = dict(filter(lambda x: x[0] not in self.sc_query_dict, self.sc_list.items()))
+            old_sc_id_list = list(str(x[1]["_scid"]) for x in old_sc_list.items())
+
+            # New sc Insertion
+            for new_sc in new_sc_list:
+                sc_data = dict(new_sc_list[new_sc])
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubescinfo")
+                value_data = utils.insert_values([self.cluster_id]+list(sc_data.values())+[1, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubescinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubescinfo", cursor, conn)
+                self.log.write("PUT", f"Kubescinfo insertion is completed - {new_sc}")
+
+            # Old sc Update
+            if len(old_sc_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubescinfo", "_scid", ",".join(old_sc_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubescinfo", cursor, conn)
+
+            # New sc ID Update
+            try:
+                cur_dict.execute(stmt.SELECT_SCINFO_CLUSTERID.format(self.cluster_id))
+                result = cur_dict.fetchall()
+                self.sc_query_dict = dict({x["_scname"]:x for x in result})
+            except:
+                pass
+        except Exception as e:
+            conn.rollback()
+            self.log.write("Error", f"Kubescinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_namespace_info(self, cursor, cur_dict, conn):
@@ -364,7 +423,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubenamespaceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubenamespaceinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_node_info(self, cursor, cur_dict, conn):
@@ -418,7 +477,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubenodeinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubenodeinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
         if not self.node_query_dict:
@@ -483,7 +542,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubenodesystemcontainer info has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubenodesystemcontainer info has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_service_info(self, cursor, cur_dict, conn):
@@ -535,7 +594,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubesvcinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubesvcinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_ingress_info(self, cursor, cur_dict, conn):
@@ -602,7 +661,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubeinginfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubeinginfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
         # Ingress Host Processing
@@ -630,7 +689,7 @@ class Processing:
                 self.input_tableinfo("kubeinghostinfo", cursor, conn)
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubeinghostinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubeinghostinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False            
 
     def update_deployment_info(self, cursor, cur_dict, conn):
@@ -683,7 +742,7 @@ class Processing:
                 pass            
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubedeployinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubedeployinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_statefulset_info(self, cursor, cur_dict, conn):
@@ -738,7 +797,7 @@ class Processing:
                 pass            
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubestsinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubestsinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_daemonset_info(self, cursor, cur_dict, conn):
@@ -790,7 +849,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubedsinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubedsinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_replicaset_info(self, cursor, cur_dict, conn):
@@ -848,7 +907,107 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubersinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubersinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
+    def update_persistent_volume_claim_info(self, cursor, cur_dict, conn):
+        if not self.ref_process_flag:
+            return False
+
+        ontunetime = self.get_ontunetime(cursor)
+
+        try:
+            cur_dict.execute(stmt.SELECT_PVCINFO_CLUSTERID.format(self.cluster_id))
+            self.pvc_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        try:
+            old_pvc_list = dict(filter(lambda x: x[0] not in self.pvc_list, self.pvc_query_dict.items()))
+            new_pvc_list = dict(filter(lambda x: x[0] not in self.pvc_query_dict, self.pvc_list.items()))
+            old_pvc_id_list = list(str(x[1]["_pvcid"]) for x in old_pvc_list.items())
+
+            # New pvc Insertion
+            for new_pvc in new_pvc_list:
+                pvc_data = dict(new_pvc_list[new_pvc])
+
+                pvc_ns_name = pvc_data.pop("nsname")
+                pvc_sc_name = pvc_data.pop("pvcscname")
+                pvc_data["nsid"] = self.namespace_query_dict[pvc_ns_name]["_nsid"]
+                pvc_data["pvcscid"] = self.sc_query_dict[pvc_sc_name]["_scid"]
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubepvcinfo")
+                value_data = utils.insert_values(list(pvc_data.values())+[1, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubepvcinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubepvcinfo", cursor, conn)
+                self.log.write("PUT", f"Kubepvcinfo insertion is completed - {new_pvc}")
+
+            # Old pvc Update
+            if len(old_pvc_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubepvcinfo", "_pvcid", ",".join(old_pvc_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubepvcinfo", cursor, conn)
+
+            # New pvc ID Update
+            try:
+                cur_dict.execute(stmt.SELECT_PVCINFO_CLUSTERID.format(self.cluster_id))
+                result = cur_dict.fetchall()
+                self.pvc_query_dict = dict({x["_uid"]:x for x in result})
+            except:
+                pass
+        except Exception as e:
+            conn.rollback()
+            self.log.write("Error", f"Kubepvcinfo has an error. Put data process is stopped. - {str(e)}")
+            self.ref_process_flag = False
+
+    def update_event_info(self, cursor, cur_dict, conn):
+        if not self.ref_process_flag:
+            return False
+
+        ontunetime = self.get_ontunetime(cursor)
+
+        try:
+            cur_dict.execute(stmt.SELECT_EVENTINFO_CLUSTERID.format(self.cluster_id))
+            self.event_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+        except:
+            pass
+
+        try:
+            old_event_list = dict(filter(lambda x: x[0] not in self.event_list, self.event_query_dict.items()))
+            new_event_list = dict(filter(lambda x: x[0] not in self.event_query_dict, self.event_list.items()))
+            old_event_id_list = list(str(x[1]["_eventid"]) for x in old_event_list.items())
+
+            # New event Insertion
+            for new_event in new_event_list:
+                event_data = dict(new_event_list[new_event])
+
+                event_ns_name = event_data.pop("nsname")
+                event_data["nsid"] = self.namespace_query_dict[event_ns_name]["_nsid"]
+
+                column_data = utils.insert_columns_ref(self.schema_obj, "kubeeventinfo")
+                value_data = utils.insert_values(list(event_data.values())+[1, ontunetime, ontunetime])
+                cursor.execute(stmt.INSERT_TABLE.format("kubeeventinfo", column_data, value_data))
+                conn.commit()
+                self.input_tableinfo("kubeeventinfo", cursor, conn)
+                self.log.write("PUT", f"Kubeeventinfo insertion is completed - {new_event}")
+
+            # Old event Update
+            if len(old_event_id_list) > 0:
+                cursor.execute(stmt.UPDATE_ENABLED.format("kubeeventinfo", "_eventid", ",".join(old_event_id_list), ontunetime))
+                conn.commit()
+                self.input_tableinfo("kubeeventinfo", cursor, conn)
+
+            # New event ID Update
+            try:
+                cur_dict.execute(stmt.SELECT_EVENTINFO_CLUSTERID.format(self.cluster_id))
+                result = cur_dict.fetchall()
+                self.event_query_dict = dict({x["_uid"]:x for x in result})
+            except:
+                pass
+        except Exception as e:
+            conn.rollback()
+            self.log.write("Error", f"Kubeeventinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_pod_and_container_info(self, cursor, cur_dict, conn):
@@ -934,7 +1093,7 @@ class Processing:
                 self.ref_process_flag = False
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubepodinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubepodinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
             return
 
@@ -970,7 +1129,7 @@ class Processing:
                 pass                
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubecontainerinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubecontainerinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_pod_device_info(self, cursor, cur_dict, conn):
@@ -1033,7 +1192,7 @@ class Processing:
                     pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubedeviceinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubedeviceinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_label_selector_info(self, cursor, cur_dict, conn):
@@ -1071,7 +1230,7 @@ class Processing:
                 pass
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubelabelvalueinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubelabelvalueinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
         # Get Label/Selector Info and change from list to dict
@@ -1111,7 +1270,7 @@ class Processing:
                 self.input_tableinfo("kubelabelinfo", cursor, conn)
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubelabelinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubelabelinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
         # Update Selector Info
@@ -1148,7 +1307,7 @@ class Processing:
                 self.input_tableinfo("kubeselectorinfo", cursor, conn)
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubeselectorinfo has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubeselectorinfo has an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def update_lastrealtimeperf_table(self, cursor, conn):
@@ -1193,7 +1352,7 @@ class Processing:
                 self.log.write("PUT", f"Kubelastrealtimeperf update is completed - {self.node_query_dict[node]['_nodeid']}")
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kubelastrealtimeperf has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubelastrealtimeperf has an error. Put data process is stopped. - {str(e)}")
             return False
 
     def update_realtime_table(self, cursor, conn):
@@ -1413,7 +1572,7 @@ class Processing:
 
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kube realtime tables have an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kube realtime tables have an error. Put data process is stopped. - {str(e)}")
             self.ref_process_flag = False
 
     def insert_average_table(self, table_midfix, key_columns, cursor, conn):
@@ -1457,7 +1616,7 @@ class Processing:
             self.log.write("PUT", f"{table_lt_name} update is completed - {ontunetime}")
         except Exception as e:
             conn.rollback()
-            self.log.write("ERROR", f"Kube average tables have an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kube average tables have an error. Put data process is stopped. - {str(e)}")
 
     def update_average_table(self, cursor, conn):
         if not self.ref_process_flag:
