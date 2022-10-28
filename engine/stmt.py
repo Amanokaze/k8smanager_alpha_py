@@ -12,8 +12,8 @@ INSERT_TABLE = "insert into {} ({}) values ({});"
 SELECT_TABLE = "select {} from {} where {} {};"
 UPDATE_TABLE = "update {0} set {1}, _updatetime={4} where {2}={3};"
 UPDATE_ENABLED = "update {0} set _enabled=0, _updatetime={3} where {1} in ({2});"
-
-DELETE_LASTREALTIMEPERF = "delete from kubelastrealtimeperf where _nodeid={};"
+DELETE_TABLE = "delete from {};"
+DROP_VIEW = "drop view {};"
 
 SELECT_MANAGERINFO_IP = "select * from kubemanagerinfo where _ip='{}';"
 SELECT_CLUSTERINFO_IP_MGRID = "select * from kubeclusterinfo where _ip='{}' and _managerid={};"
@@ -30,8 +30,8 @@ SELECT_DEPLOYINFO_CLUSTERID = "select dep.* from kubedeployinfo dep, kubensinfo 
 SELECT_STSINFO_CLUSTERID = "select sts.* from kubestsinfo sts, kubensinfo ns where ns._nsid=sts._nsid and ns._clusterid={} and sts._enabled=1;"
 SELECT_DSINFO_CLUSTERID = "select ds.* from kubedsinfo ds, kubensinfo ns where ns._nsid=ds._nsid and ns._clusterid={} and ds._enabled=1;"
 SELECT_RSINFO_CLUSTERID = "select rs.* from kubersinfo rs, kubensinfo ns where ns._nsid=rs._nsid and ns._clusterid={} and rs._enabled=1;"
-SELECT_PVCINFO_CLUSTERID = "select pvc.* from kubepvcinfo pvc, kubensinfo ns where ns._nsid=pvc._pvcid and ns._clusterid={} and pvc._enabled=1;"
-SELECT_EVENTINFO_CLUSTERID = "select e.* from kubeeventinfo e, kubensinfo ns where ns._nsid=e._eventid and ns._clusterid={} and e._enabled=1;"
+SELECT_PVCINFO_CLUSTERID = "select pvc.* from kubepvcinfo pvc, kubensinfo ns where ns._nsid=pvc._nsid and ns._clusterid={} and pvc._enabled=1;"
+SELECT_EVENTINFO_CLUSTERID = "select e.* from kubeeventinfo e, kubensinfo ns where ns._nsid=e._nsid and ns._clusterid={} and e._enabled=1;"
 SELECT_PODINFO_CLUSTERID = "select p.* from kubepodinfo p, kubenodeinfo n where p._nodeid = n._nodeid and n._clusterid={} and n._enabled=1 and p._enabled=1;"
 SELECT_PODINFO_NODEID = "select * from kubepodinfo where _nodeid in ({}) and _enabled=1;"
 SELECT_CONTAINERINFO_CLUSTERID = "select c.*, p._uid as _poduid from kubecontainerinfo c, kubepodinfo p, kubenodeinfo n where c._podid=p._podid and p._nodeid=n._nodeid and n._clusterid={} and n._enabled=1 and p._enabled=1 and c._enabled=1 order by p._podid, c._containername;"
@@ -42,8 +42,175 @@ SELECT_LABELVALUEINFO = "select * from kubelabelvalueinfo;"
 SELECT_LABELINFO = "select l.*, lv._keyvalue from kubelabelinfo l, kubelabelvalueinfo lv where lv._lbvalueid = l._lbvalueid and l._enabled=1;"
 SELECT_SELECTORINFO = "select s.*, lv._keyvalue from kubeselectorinfo s, kubelabelvalueinfo lv where lv._lbvalueid = s._lbvalueid and s._enabled=1;"
 
+SELECT_SVC_POD_MAPPING = """
+select t.*
+  from (select skind, sid, suid, sname, 
+			   array_to_string(array_agg(slbid order by slbid),',') as slbids,
+			   lkind, lid, luid, lname,
+			   array_to_string(array_agg(llbid order by llbid),',') as llbids,
+			   case when sum(case when status = 'Running' then 1 else 0 end) > 0 then 'Running' else 'Failed' end runningstatus
+		  from (select s._kind skind, v._svcid sid, s._kinduid suid, v._svcname sname, s._lbvalueid slbid, l._kind lkind, p._podid lid, l._kinduid luid, p._podname lname, l._lbvalueid llbid, p._status status
+				  from kubeselectorinfo s, kubelabelinfo l, kubepodinfo p, kubesvcinfo v
+				 where l._enabled=1 and s._enabled=1 and p._enabled=1 and v._enabled=1
+		           and l._kind='Pod' and s._kind='Service'
+		           and l._kinduid = p._uid
+		           and s._kinduid = v._uid
+				   and l._lbvalueid=s._lbvalueid) t
+		 group by skind, sid, suid, sname, lkind, lid, luid, lname) t
+ where t.slbids = t.llbids;
+"""
+
+SELECT_ING_SVC_POD_MAPPING = """
+select ingsvc.*, svcpod.lid, svcpod.luid, svcpod.lname, svcpod.runningstatus
+  from (select t.*
+		  from (select skind, sid, suid, sname, 
+					   array_to_string(array_agg(slbid order by slbid),',') as slbids,
+					   lkind, lid, luid, lname,
+					   array_to_string(array_agg(llbid order by llbid),',') as llbids,
+					   case when sum(case when status = 'Running' then 1 else 0 end) > 0 then 'Running' else 'Failed' end runningstatus
+				  from (select s._kind skind, v._svcid sid, s._kinduid suid, v._svcname sname, s._lbvalueid slbid, l._kind lkind, p._podid lid, l._kinduid luid, p._podname lname, l._lbvalueid llbid, p._status status
+						  from kubeselectorinfo s, kubelabelinfo l, kubepodinfo p, kubesvcinfo v
+						 where l._enabled=1 and s._enabled=1 and p._enabled=1 and v._enabled=1
+				           and l._kind='Pod' and s._kind='Service'
+				           and l._kinduid = p._uid
+				           and s._kinduid = v._uid
+						   and l._lbvalueid=s._lbvalueid) t
+				 group by skind, sid, suid, sname, lkind, lid, luid, lname) t
+		 where t.slbids = t.llbids) svcpod,
+		(select i._ingid iid, i._uid iuid, i._ingname, s._svcid sid, s._uid suid, s._svcname sname
+		  from kubeinginfo i, kubeinghostinfo ih, kubesvcinfo s
+		 where i._ingid = ih._ingid
+           and i._enabled=1 and ih._enabled=1
+		   and ih._backendtype = 'service'
+		   and ih._backendname = s._svcname) ingsvc
+ where ingsvc.suid = svcpod.suid;
+"""
+
+STAT_POD_COLUMNS = """
+	   coalesce(sum(p._cpuusage),0) _cpuusage,
+	   case when sum(p._memorysize) = 0 then 0 else coalesce(round(sum(p._workingsetsize) / sum(p._memorysize) * 100 * 100),0) end _memoryused,
+	   case when sum(p._memorysize) = 0 then 0 else coalesce(round(sum(p._swapsize) / sum(p._memorysize) * 100 * 100),0) end _swapused,
+	   coalesce(sum(p._memorysize),0) _memorysize,
+	   coalesce(sum(p._workingsetsize),0) _workingsetsize,
+	   coalesce(sum(p._availablesize),0) _availablesize,
+	   coalesce(sum(p._swapsize),0) _swapsize
+"""
+
+STAT_POD_SUB_QUERY = """
+  from (select l._cpuusage, 
+	     			  case when l._memorysize = -1 then 0 else l._workingsetsize end _workingsetsize,
+	     			  case when l._memorysize = -1 then 0 else l._swapsize end _swapsize,
+	     			  case when l._memorysize = -1 then 0 else l._memorysize end _memorysize,
+	     			  case when l._memorysize = -1 then 0 else l._availablesize end _availablesize,
+	     			  p._podid, p._refkind, p._refid
+		  from kubepodinfo p, kubelastpodrealtimeperf l
+		 where p._podid = l._podid
+		   and p._enabled=1) p
+"""
+
+STAT_NS_METRIC_DATA = f"""
+select n._nsid, n._nsname,
+       {STAT_POD_COLUMNS}
+  from (select l._cpuusage, 
+	     			  case when l._memorysize = -1 then 0 else l._workingsetsize end _workingsetsize,
+	     			  case when l._memorysize = -1 then 0 else l._swapsize end _swapsize,
+	     			  case when l._memorysize = -1 then 0 else l._memorysize end _memorysize,
+	     			  case when l._memorysize = -1 then 0 else l._availablesize end _availablesize,
+	     			  p._nsid
+		  from kubepodinfo p, kubelastpodrealtimeperf l
+		 where p._podid = l._podid
+		   and p._enabled=1) p
+ right outer join kubensinfo n
+    on p._nsid = n._nsid
+   and n._status = 'Active'
+   and n._enabled=1
+ group by n._nsid, n._nsname
+ order by n._nsid;
+"""
+
+STAT_ING_METRIC_DATA = f"""
+select v.sid, v.sname,
+       {STAT_POD_COLUMNS}
+{STAT_POD_SUB_QUERY}
+ right outer join kubeingpodmappingv v
+    on p._podid = v.lid
+   and v.runningstatus = 'Running'
+ group by v.sid, v.sname
+ order by v.sid;
+"""
+
+STAT_SVC_METRIC_DATA = f"""
+select v.sid, v.sname,
+       {STAT_POD_COLUMNS}
+{STAT_POD_SUB_QUERY}
+ right outer join kubesvcpodmappingv v
+    on p._podid = v.lid
+   and v.runningstatus = 'Running'
+ group by v.sid, v.sname
+ order by v.sid;
+"""
+
+STAT_DEPLOY_METRIC_DATA = f"""
+select d._deployid, d._deployname,
+       {STAT_POD_COLUMNS}
+{STAT_POD_SUB_QUERY}
+ right outer join (select d._deployid, d._deployname, d._uid, r._rsid
+                     from kubedeployinfo d, kubersinfo r
+                    where r._refkind = 'Deployment'
+                      and r._refid = d._deployid 
+				              and d._replicas > 0
+				              and d._availablers = d._replicas
+                      and r._enabled=1 and d._enabled=1) d
+    on p._refkind = 'ReplicaSet'
+   and p._refid = d._rsid 
+ group by d._deployid, d._deployname
+ order by d._deployid;
+"""
+
+STAT_STS_METRIC_DATA = f"""
+select s._stsid, s._stsname,
+       {STAT_POD_COLUMNS}
+{STAT_POD_SUB_QUERY}
+ right outer join kubestsinfo s 
+    on p._refkind = 'StatefulSet'
+   and p._refid = s._stsid
+   and s._enabled = 1   
+   and s._replicas > 0
+   and s._availablers = s._replicas
+ group by s._stsid, s._stsname
+ order by s._stsid;
+"""
+
+STAT_DS_METRIC_DATA = f"""
+select ds._dsid, ds._dsname,
+       {STAT_POD_COLUMNS}
+{STAT_POD_SUB_QUERY}
+ right outer join kubedsinfo ds 
+    on p._refkind = 'DaemonSet'
+   and p._refid = ds._dsid
+   and ds._enabled = 1   
+   and ds._desired > 0
+   and ds._available = ds._desired
+ group by ds._dsid, ds._dsname
+ order by ds._dsid;
+"""
+
+STAT_RS_METRIC_DATA = f"""
+select rs._rsid, rs._rsname,
+       {STAT_POD_COLUMNS}
+{STAT_POD_SUB_QUERY}
+ right outer join kubersinfo rs 
+    on p._refkind = 'ReplicaSet'
+   and p._refid = rs._rsid
+   and rs._enabled = 1   
+   and rs._replicas > 0
+   and rs._availablers = rs._replicas
+ group by rs._rsid, rs._rsname
+ order by rs._rsid;
+"""
+
 SELECT_VIEWER_OVERALL = """SELECT n._nodename, p.*
-  FROM kubelastrealtimeperf p, kubenodeinfo n
+  FROM kubelastnoderealtimeperf p, kubenodeinfo n
  WHERE n._nodeid = p._nodeid and n._nodeid in ({})
  ORDER BY n._nodename;"""
 

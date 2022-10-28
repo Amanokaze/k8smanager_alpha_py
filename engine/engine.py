@@ -38,7 +38,8 @@ class SYSTEM:
     def __init__(self):
         self._duration = 0
         self._network_metric = {
-            "lastrealtimeperf": dict(),
+            "lastnodeperf": dict(),
+            "lastpodperf": dict(),
             "nodeperf": dict(),
             "podperf": dict(),
             "podnet": dict()

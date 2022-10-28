@@ -45,7 +45,7 @@ def insert_columns_ref(schema, obj_name):
     return ",".join(list(y[0] for y in list(filter(lambda x: 'PRIMARY KEY' not in x, schema["reference"][obj_name]))))
 
 def insert_columns_metric(schema, obj_name):
-    metric_list = list(schema["reference"][obj_name]) if obj_name == "kubelastrealtimeperf" else list(schema["metric"][obj_name])
+    metric_list = list(schema["reference"][obj_name]) if obj_name[:8] == "kubelast" else list(schema["metric"][obj_name])
     return ",".join(list(y[0] for y in metric_list))
 
 def insert_values(data):
@@ -77,26 +77,28 @@ def calculate(cal_type, values):
     MEGA_VALUES = KILO_VALUES ** 2
     PERCENT_VALUE = 100
     DUPLICATE_VALUE = 100
+    THOUSAND_VALUE = 10 ** 3
+
     
     if cal_type == "cpu_usage_percent":
         # Reference: https://github.com/kubernetes/heapster/issues/650#issuecomment-147795824
         vals = list(int(x) if x else 0 for x in values)
-        return round(vals[0] / (vals[1] * NANO_VALUES) * PERCENT_VALUE)
+        return round(vals[0] / (vals[1] * NANO_VALUES) * PERCENT_VALUE * THOUSAND_VALUE)
     elif cal_type[:6] == "memory":
         wsbytes = int(values["workingSetBytes"]) if "workingSetBytes" in values else 0
-        avbbytes = int(values["availableBytes"]) if "availableBytes" in values else 0
+        avbbytes = int(values["availableBytes"]) if "availableBytes" in values else -1
         rssbytes = int(values["rssBytes"]) if "rssBytes" in values else 0
-        limitbytes = wsbytes + avbbytes
+        limitbytes = wsbytes + avbbytes if avbbytes > -1 else -1
 
         if cal_type == "memory_used_percent":
             # Reference: WSBytes / (WSBytes + Available = Limit) (Now not used UsageBytes)
             # WSBytes: The amount of working set memory. This includes recently accessed memory, dirty memory, and kernel memory. WorkingSetBytes is <= UsageBytes
             # UsageBytes: Total memory in use. This includes all memory regardless of when it was accessed.        
-            return round(wsbytes / limitbytes * PERCENT_VALUE * DUPLICATE_VALUE) if limitbytes > 0 else 0
+            return round(wsbytes / limitbytes * PERCENT_VALUE * DUPLICATE_VALUE) if limitbytes > 0 else -1
         elif cal_type == "memory_swap_percent":
             # Reference: RSSBytes / (WSBytes + Available = Limit)
             # RSSBytes: The amount of anonymous and swap cache memory (includes transparent hugepages)
-            return round(rssbytes / limitbytes * PERCENT_VALUE * DUPLICATE_VALUE) if limitbytes > 0 else 0
+            return round(rssbytes / limitbytes * PERCENT_VALUE * DUPLICATE_VALUE) if limitbytes > 0 else -1
         elif cal_type == "memory_size":
             return limitbytes
         else:

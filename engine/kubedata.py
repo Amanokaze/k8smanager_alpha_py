@@ -544,27 +544,29 @@ class Kubedata:
                         am_abbrs.append("RWOP")
                 return ",".join(am_abbrs)
 
-
             for pvc in persistentvolumeclaims.items:
-                pv = pv_data[pvc.metadata.uid]
-                pvc_data[pvc.metadata.uid] = {
-                    "nsid": 0,
-                    "starttime": utils.datetime_to_timestampz(pvc.metadata.creation_timestamp),
-                    "pvcname": pvc.metadata.name,
-                    "pvcuid": pvc.metadata.uid,
-                    "pvcaccessmodes": getAccessModes(pvc.spec.access_modes),
-                    "pvcreqstorage": utils.change_quantity_unit(pvc.spec.resources.requests["storage"]),
-                    "pvcstatus": pvc.status.phase,
-                    "pvcscid": 0,
-                    "pvname": pv.metadata.name,
-                    "pvuid": pv.metadata.uid,
-                    "pvaccessmodes": getAccessModes(pv.spec.access_modes),
-                    "pvcapacity": utils.change_quantity_unit(pv.spec.capacity["storage"]),
-                    "pvreclaimpolicy": pv.spec.persistent_volume_reclaim_policy,
-                    "pvstatus": pv.status.phase,
-                    "pvcscname": pvc.spec.storage_class_name,
-                    "nsname": pvc.metadata.namespace
-                }
+                try:
+                    pv = pv_data[pvc.metadata.uid]
+                    pvc_data[pvc.metadata.uid] = {
+                        "nsid": 0,
+                        "starttime": utils.datetime_to_timestampz(pvc.metadata.creation_timestamp),
+                        "pvcname": pvc.metadata.name,
+                        "pvcuid": pvc.metadata.uid,
+                        "pvcaccessmodes": getAccessModes(pvc.spec.access_modes),
+                        "pvcreqstorage": utils.change_quantity_unit(pvc.spec.resources.requests["storage"]),
+                        "pvcstatus": pvc.status.phase,
+                        "pvcscid": 0,
+                        "pvname": pv.metadata.name,
+                        "pvuid": pv.metadata.uid,
+                        "pvaccessmodes": getAccessModes(pv.spec.access_modes),
+                        "pvcapacity": utils.change_quantity_unit(pv.spec.capacity["storage"]),
+                        "pvreclaimpolicy": pv.spec.persistent_volume_reclaim_policy,
+                        "pvstatus": pv.status.phase,
+                        "pvcscname": pvc.spec.storage_class_name,
+                        "nsname": pvc.metadata.namespace
+                    }
+                except Exception as e:
+                    self.log.write("Error", f"PVC - PV Mapping Error, {str(e)}")
 
             self.log.write("GET", "Kube PersistentVolume/PVC Data Import is completed.")
 

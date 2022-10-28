@@ -119,7 +119,8 @@ class Processing:
         schema_object = {
             "reference": dict(),
             "metric": dict(),
-            "index": dict()
+            "index": dict(),
+            "view": dict()
         }
         with open('schema.csv', 'r', newline='') as csvfile:
             reader = csv.reader(csvfile, delimiter=",")
@@ -176,12 +177,49 @@ class Processing:
 
                         # Metric Table Index Creation
                         index_properties = ",".join(schema_object["index"][obj_name][0])
-                        index_creation_statement = f"create index if not exists i{full_table_name} on public.{full_table_name} using btree ({index_properties});"
+                        index_creation_statement = f"create index if not exists i{full_table_name} on {full_table_name} using btree ({index_properties});"
                         cursor.execute(index_creation_statement)
                         conn.commit()
                         self.log.write("PUT", f"Metric table index i{full_table_name} creation is completed.")
 
                         self.input_tableinfo(full_table_name, cursor, conn)
+
+            # Check Views
+            for obj_name in schema_object["view"]:
+                creation_prefix = "create or replace view"
+                view_query = str()
+                if obj_name == "kubesvcpodmappingv":
+                    view_query = stmt.SELECT_SVC_POD_MAPPING
+                elif obj_name == "kubeingpodmappingv":
+                    view_query = stmt.SELECT_ING_SVC_POD_MAPPING
+                elif obj_name == "kubensmetricv":
+                    view_query = stmt.STAT_NS_METRIC_DATA
+                elif obj_name == "kubeingmetricv":
+                    view_query = stmt.STAT_ING_METRIC_DATA
+                elif obj_name == "kubesvcmetricv":
+                    view_query = stmt.STAT_SVC_METRIC_DATA
+                elif obj_name == "kubedeploymetricv":
+                    view_query = stmt.STAT_DEPLOY_METRIC_DATA
+                elif obj_name == "kubestsmetricv":
+                    view_query = stmt.STAT_STS_METRIC_DATA
+                elif obj_name == "kubedsmetricv":
+                    view_query = stmt.STAT_DS_METRIC_DATA
+                elif obj_name == "kubersmetricv":
+                    view_query = stmt.STAT_RS_METRIC_DATA
+
+                if obj_name and view_query:
+                    try:
+                        table_creation_statement = f"{creation_prefix} {obj_name} as {view_query}"
+                        cursor.execute(table_creation_statement)
+                        conn.commit()
+                        self.log.write("PUT", f"View {obj_name} creation is completed.")
+                    except:
+                        print(stmt.DROP_VIEW.format(obj_name))
+                        cursor.execute(stmt.DROP_VIEW.format(obj_name))
+                        cursor.execute(table_creation_statement)
+                        conn.commit()
+                        self.log.write("PUT", f"View {obj_name} creation is completed.")
+
 
         self.schema_obj = schema_object
 
@@ -301,7 +339,7 @@ class Processing:
             return False
 
         ontunetime = self.get_ontunetime(cursor)
-        #print(resources)
+
         try:
             cur_dict.execute(stmt.SELECT_RESOURCEINFO_CLUSTERID.format(self.cluster_id))
             self.resource_query_dict = dict({x["_resourcename"]:x for x in cur_dict.fetchall()})
@@ -918,7 +956,7 @@ class Processing:
 
         try:
             cur_dict.execute(stmt.SELECT_PVCINFO_CLUSTERID.format(self.cluster_id))
-            self.pvc_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
+            self.pvc_query_dict = dict({x["_pvcuid"]:x for x in cur_dict.fetchall()})
         except:
             pass
 
@@ -953,7 +991,7 @@ class Processing:
             try:
                 cur_dict.execute(stmt.SELECT_PVCINFO_CLUSTERID.format(self.cluster_id))
                 result = cur_dict.fetchall()
-                self.pvc_query_dict = dict({x["_uid"]:x for x in result})
+                self.pvc_query_dict = dict({x["_pvcuid"]:x for x in result})
             except:
                 pass
         except Exception as e:
@@ -1017,19 +1055,19 @@ class Processing:
         # Pre-processing
         ontunetime = self.get_ontunetime(cursor)
         pod_container_list = dict()
-
+        
         try:
             cur_dict.execute(stmt.SELECT_PODINFO_CLUSTERID.format(self.cluster_id))
             self.pod_query_dict = dict({x["_uid"]:x for x in cur_dict.fetchall()})
         except:
             pass
-
+        
         try: 
             cur_dict.execute(stmt.SELECT_CONTAINERINFO_CLUSTERID.format(self.cluster_id))
             self.container_query_dict = dict({f"{x['_poduid']}/{x['_containername']}":x for x in cur_dict.fetchall()})
         except:
             pass
-
+        
         # Pod Processing
         try:
             # Container pop and Container list define
@@ -1038,7 +1076,7 @@ class Processing:
                 pod_containers = self.pod_list[pod].pop("containers")                
                 for pc in pod_containers:
                     pod_container_list[f"{pod}/{pc['name']}"] = pc
-
+            
             # Pod list define
             old_pod_list = dict(filter(lambda x: x[0] not in self.pod_list, self.pod_query_dict.items()))
             new_pod_list = dict(filter(lambda x: x[0] not in self.pod_query_dict, self.pod_list.items()))
@@ -1050,7 +1088,7 @@ class Processing:
                 pod_node_name = pod_data.pop("nodename")
                 pod_ns_name = pod_data.pop("nsname")
                 pod_ref_uid = pod_data.pop("refuid")
-
+                
                 self.set_label_selector("label", "Pod", new_pod, pod_data.pop("label"))
 
                 pod_data["nsid"] = self.namespace_query_dict[pod_ns_name]["_nsid"] if pod_ns_name else 0
@@ -1058,14 +1096,14 @@ class Processing:
 
                 if pod_data["nodeid"] == 0:
                     continue
-
+                
                 if pod_data["refkind"] == "DaemonSet":
                     pod_data["refid"] = self.ds_query_dict[pod_ref_uid]["_dsid"]
                 elif pod_data["refkind"] == "ReplicaSet":
                     pod_data["refid"] = self.rs_query_dict[pod_ref_uid]["_rsid"]
                 elif pod_data["refkind"] == "StatefulSet":
                     pod_data["refid"] = self.sts_query_dict[pod_ref_uid]["_stsid"]
-
+                
                 column_data = utils.insert_columns_ref(self.schema_obj, "kubepodinfo")
                 value_data = utils.insert_values(list(pod_data.values())+[1, ontunetime, ontunetime])
                 cursor.execute(stmt.INSERT_TABLE.format("kubepodinfo", column_data, value_data))
@@ -1073,13 +1111,13 @@ class Processing:
 
                 self.input_tableinfo("kubepodinfo", cursor, conn)
                 self.log.write("PUT", f"Kubepodinfo insertion is completed - {new_pod}")
-
+            
             # Old pod Update
             if len(old_pod_id_list) > 0:
                 cursor.execute(stmt.UPDATE_ENABLED.format("kubepodinfo", "_podid", ",".join(old_pod_id_list), ontunetime))
                 conn.commit()
                 self.input_tableinfo("kubepodinfo", cursor, conn)
-
+            
             # New pod ID Update
             try:
                 cur_dict.execute(stmt.SELECT_PODINFO_CLUSTERID.format(self.cluster_id))
@@ -1091,6 +1129,7 @@ class Processing:
             if not self.pod_query_dict:
                 self.log.write("GET", "Kubepodinfo is empty. Put data process is stopped.")
                 self.ref_process_flag = False
+
         except Exception as e:
             conn.rollback()
             self.log.write("Error", f"Kubepodinfo has an error. Put data process is stopped. - {str(e)}")
@@ -1317,13 +1356,19 @@ class Processing:
         ontunetime = self.get_ontunetime(cursor)
 
         try:
-            for node in self.node_query_dict:
-                node_data = self.node_metric_list[node]
+            # Previous Node/Pod Data Delete - Node/Pod 단위로 삭제하면 쿼리 수행 개수가 너무 길어지므로, 간소화
+            cursor.execute(stmt.DELETE_TABLE.format("kubelastnoderealtimeperf"))
+            cursor.execute(stmt.DELETE_TABLE.format("kubelastpodrealtimeperf"))
+            conn.commit()
 
-                network_prev_cum_usage = self.system_var.get_network_metric("lastrealtimeperf", node)                
+            for node in self.node_query_dict:
+                # Setting node data
+                node_data = self.node_metric_list[node]
+                
+                network_prev_cum_usage = self.system_var.get_network_metric("lastnodeperf", node)
                 network_cum_usage = sum(list(x["rxBytes"]+x["txBytes"] for x in node_data["network"]["interfaces"]))
                 network_usage = network_cum_usage - network_prev_cum_usage if network_prev_cum_usage else 0
-
+                
                 node_perf = [
                     self.node_query_dict[node]["_nodeid"],
                     ontunetime,                    
@@ -1331,7 +1376,9 @@ class Processing:
                     utils.calculate('memory_used_percent', node_data["memory"]),
                     utils.calculate('memory_swap_percent', node_data["memory"]),
                     utils.calculate('memory_size', node_data["memory"]),
-                    node_data["memory"]["rssBytes"],
+                    node_data["memory"]["rssBytes"] if "rssBytes" in node_data["memory"] else 0,
+                    node_data["memory"]["workingSetBytes"] if "workingSetBytes" in node_data["memory"] else 0,
+                    node_data["memory"]["availableBytes"] if "availableBytes" in node_data["memory"] else -1,
                     utils.calculate('network', [network_usage]),
                     utils.calculate('fs_usage_percent', node_data["fs"]),
                     utils.calculate('fs_total_size', node_data["fs"]),
@@ -1339,20 +1386,60 @@ class Processing:
                     utils.calculate('fs_usage_percent', node_data["runtime"]["imageFs"]),
                     node_data["rlimit"]["curproc"]
                 ]
-
-                self.system_var.set_network_metric("lastrealtimeperf", node, network_cum_usage)
-
-                column_data = utils.insert_columns_metric(self.schema_obj, "kubelastrealtimeperf")
+                
+                self.system_var.set_network_metric("lastnodeperf", node, network_cum_usage)
+                
+                column_data = utils.insert_columns_metric(self.schema_obj, "kubelastnoderealtimeperf")
                 value_data = utils.insert_values(node_perf)
-
-                cursor.execute(stmt.DELETE_LASTREALTIMEPERF.format(self.node_query_dict[node]["_nodeid"]))
-                cursor.execute(stmt.INSERT_TABLE.format("kubelastrealtimeperf", column_data, value_data))
+                
+                cursor.execute(stmt.INSERT_TABLE.format("kubelastnoderealtimeperf", column_data, value_data))
                 conn.commit()
-                self.input_tableinfo("kubelastrealtimeperf", cursor, conn, ontunetime)
-                self.log.write("PUT", f"Kubelastrealtimeperf update is completed - {self.node_query_dict[node]['_nodeid']}")
+                self.input_tableinfo("kubelastnoderealtimeperf", cursor, conn, ontunetime)
+                self.log.write("PUT", f"Kubelastnoderealtimeperf update is completed - {self.node_query_dict[node]['_nodeid']}")
+                
+
+                # Setting pod data
+                pod_data = self.pod_metric_list[node]
+                for pod in pod_data:
+                    uid = pod["podRef"]["uid"]
+                    podid = self.get_api_podid(uid)
+
+                    network_prev_cum_usage = self.system_var.get_network_metric("lastpodperf", podid)
+                    network_cum_usage = sum(list(x["rxBytes"]+x["txBytes"] for x in pod["network"]["interfaces"]))
+                    network_usage = network_cum_usage - network_prev_cum_usage if network_prev_cum_usage else 0 
+
+                    # Insert pod metric data
+                    pod_perf = [
+                        podid,
+                        ontunetime,
+                        utils.calculate('cpu_usage_percent', [pod["cpu"]["usageNanoCores"], self.node_list[node]["cpucount"]]) if "cpu" in pod and "usageNanoCores" in pod["cpu"] else 0,
+                        utils.calculate('memory_used_percent', pod["memory"]),
+                        utils.calculate('memory_swap_percent', pod["memory"]),
+                        utils.calculate('memory_size', pod["memory"]),
+                        pod["memory"]["rssBytes"] if "memory" in pod and "rssBytes" in pod["memory"] else 0,
+                        pod["memory"]["workingSetBytes"] if "memory" in pod and "workingSetBytes" in pod["memory"] else 0,
+                        pod["memory"]["availableBytes"] if "memory" in pod and "availableBytes" in pod["memory"] else -1,
+                        utils.calculate('network', [network_usage]),
+                        sum(int(x["usedBytes"]) for x in pod["volume"]) if "volume" in pod and "usedBytes" in pod["volume"][0] else 0,
+                        sum(int(x["inodesUsed"]) for x in pod["volume"]) if "volume" in pod and "inodesUsed" in pod["volume"][0] else 0,
+                        pod["ephemeral-storage"]["usedBytes"],
+                        pod["ephemeral-storage"]["inodesUsed"],
+                        pod["process_stats"]["process_count"] if "ephemeral-storage" in pod and "process_count" in pod["process_stats"] else 0
+                    ]
+
+                    self.system_var.set_network_metric("lastpodperf", podid, network_cum_usage)
+
+                    column_data = utils.insert_columns_metric(self.schema_obj, "kubelastpodrealtimeperf")
+                    value_data = utils.insert_values(pod_perf)
+
+                    cursor.execute(stmt.INSERT_TABLE.format("kubelastpodrealtimeperf", column_data, value_data))
+                    conn.commit()
+                    self.log.write("PUT", f"Kubelastpodrealtimeperf update is completed - {uid}")
+
+                self.input_tableinfo("kubelastpodrealtimeperf", cursor, conn, ontunetime)
         except Exception as e:
             conn.rollback()
-            self.log.write("Error", f"Kubelastrealtimeperf has an error. Put data process is stopped. - {str(e)}")
+            self.log.write("Error", f"Kubelastrealtimeperf(node/pod) has an error. Put data process is stopped. - {str(e)}")
             return False
 
     def update_realtime_table(self, cursor, conn):
@@ -1389,7 +1476,9 @@ class Processing:
                     utils.calculate('memory_used_percent', node_data["memory"]),
                     utils.calculate('memory_swap_percent', node_data["memory"]),
                     utils.calculate('memory_size', node_data["memory"]),
-                    node_data["memory"]["rssBytes"]
+                    node_data["memory"]["rssBytes"] if "rssBytes" in node_data["memory"] else 0,
+                    node_data["memory"]["workingSetBytes"] if "workingSetBytes" in node_data["memory"] else 0,
+                    node_data["memory"]["availableBytes"] if "availableBytes" in node_data["memory"] else -1,
                 ] + network_usage + [
                     utils.calculate('fs_usage_percent', node_data["fs"]),
                     utils.calculate('fs_total_size', node_data["fs"]),
@@ -1431,7 +1520,9 @@ class Processing:
                         utils.calculate('memory_used_percent', sysco_data[containername]["memory"]),
                         utils.calculate('memory_swap_percent', sysco_data[containername]["memory"]),
                         utils.calculate('memory_size', sysco_data[containername]["memory"]),
-                        sysco_data[containername]["memory"]["rssBytes"] if "rssBytes" in sysco_data[containername]["memory"] else 0
+                        sysco_data[containername]["memory"]["rssBytes"] if "rssBytes" in sysco_data[containername]["memory"] else 0,
+                        sysco_data[containername]["memory"]["workingSetBytes"] if "workingSetBytes" in sysco_data[containername]["memory"] else 0,
+                        sysco_data[containername]["memory"]["availableBytes"] if "availableBytes" in sysco_data[containername]["memory"] else -1
                     ]
 
                     table_name = f"realtimekubenodesysco{table_postfix}"
@@ -1469,7 +1560,9 @@ class Processing:
                         utils.calculate('memory_used_percent', pod["memory"]),
                         utils.calculate('memory_swap_percent', pod["memory"]),
                         utils.calculate('memory_size', pod["memory"]),
-                        pod["memory"]["rssBytes"] if "memory" in pod and "rssBytes" in pod["memory"] else 0
+                        pod["memory"]["rssBytes"] if "memory" in pod and "rssBytes" in pod["memory"] else 0,
+                        pod["memory"]["workingSetBytes"] if "memory" in pod and "workingSetBytes" in pod["memory"] else 0,
+                        pod["memory"]["availableBytes"] if "memory" in pod and "availableBytes" in pod["memory"] else -1
                     ] + network_usage + [
                         sum(int(x["usedBytes"]) for x in pod["volume"]) if "volume" in pod and "usedBytes" in pod["volume"][0] else 0,
                         sum(int(x["inodesUsed"]) for x in pod["volume"]) if "volume" in pod and "inodesUsed" in pod["volume"][0] else 0,
@@ -1500,6 +1593,8 @@ class Processing:
                             utils.calculate('memory_swap_percent', pod_container["memory"]),
                             utils.calculate('memory_size', pod_container["memory"]),
                             pod_container["memory"]["rssBytes"] if "memory" in pod_container and "rssBytes" in pod_container["memory"] else 0,
+                            pod_container["memory"]["workingSetBytes"] if "memory" in pod_container and "workingSetBytes" in pod_container["memory"] else 0,
+                            pod_container["memory"]["availableBytes"] if "memory" in pod_container and "availableBytes" in pod_container["memory"] else -1,
                             pod_container["rootfs"]["usedBytes"],
                             pod_container["rootfs"]["inodesUsed"],
                             pod_container["logs"]["usedBytes"],
