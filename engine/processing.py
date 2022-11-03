@@ -38,7 +38,9 @@ class Processing:
         self.schema_obj = {
             "reference": dict(),
             "metric": dict(),
-            "index": dict()
+            "refindex": dict(),
+            "metricindex": dict(),
+            "view": dict()
         }
 
     def set_kube_data(self, kubedata):
@@ -119,7 +121,8 @@ class Processing:
         schema_object = {
             "reference": dict(),
             "metric": dict(),
-            "index": dict(),
+            "refindex": dict(),
+            "metricindex": dict(),
             "view": dict()
         }
         with open('schema.csv', 'r', newline='') as csvfile:
@@ -127,11 +130,20 @@ class Processing:
             for row in reader:
                 (schema_type, obj_name) = row[:2]
 
-                if obj_name not in schema_object[schema_type]:
-                    schema_object[schema_type][obj_name] = list()
 
-                properties = list(filter(lambda x: x != "", row[2:]))
-                schema_object[schema_type][obj_name].append(properties)
+                if schema_type not in ('metricindex','refindex'):
+                    if obj_name not in schema_object[schema_type]:
+                        schema_object[schema_type][obj_name] = list()
+
+                    properties = list(filter(lambda x: x != "", row[2:]))
+                    schema_object[schema_type][obj_name].append(properties)
+                else:
+                    if obj_name not in schema_object[schema_type]:
+                        schema_object[schema_type][obj_name] = dict()
+
+                    index_type = row[2]
+                    properties = list(filter(lambda x: x != "", row[3:]))
+                    schema_object[schema_type][obj_name][index_type] = properties
         
         with self.db.get_resource_rdb() as (cursor, _, conn):
             # Check Reference Tables
@@ -174,15 +186,33 @@ class Processing:
                         cursor.execute(table_creation_statement)
                         conn.commit()
                         self.log.write("PUT", f"Metric table {full_table_name} creation is completed.")
+                        self.input_tableinfo(full_table_name, cursor, conn)
 
-                        # Metric Table Index Creation
-                        index_properties = ",".join(schema_object["index"][obj_name][0])
-                        index_creation_statement = f"create index if not exists i{full_table_name} on {full_table_name} using btree ({index_properties});"
+            # Check Metric Indexes
+            for obj_name in schema_object["metricindex"]:
+                for index_type in schema_object["metricindex"][obj_name]:
+                    properties = schema_object["metricindex"][obj_name][index_type]
+                    table_postfix = f"_{datetime.now().strftime('%y%m%d')}00"
+
+                    for table_prefix in ('realtime','avg'):
+                        full_table_name = f"{table_prefix}{obj_name}{table_postfix}"
+
+                        index_properties = ",".join(properties)
+                        index_creation_statement = f"create index if not exists i{full_table_name}_{index_type} on {full_table_name} using btree ({index_properties});"
                         cursor.execute(index_creation_statement)
                         conn.commit()
-                        self.log.write("PUT", f"Metric table index i{full_table_name} creation is completed.")
+                        self.log.write("PUT", f"Metric table index i{full_table_name}_{index_type} creation is completed.")
 
-                        self.input_tableinfo(full_table_name, cursor, conn)
+            # Check Reference Indexes
+            for obj_name in schema_object["refindex"]:
+                for index_type in schema_object["refindex"][obj_name]:
+                    properties = schema_object["refindex"][obj_name][index_type]
+
+                    index_properties = ",".join(properties)
+                    index_creation_statement = f"create index if not exists i{obj_name}_{index_type} on {obj_name} using btree ({index_properties});"
+                    cursor.execute(index_creation_statement)
+                    conn.commit()
+                    self.log.write("PUT", f"Metric table index i{obj_name}_{index_type} creation is completed.")
 
             # Check Views
             for obj_name in schema_object["view"]:
@@ -206,6 +236,8 @@ class Processing:
                     view_query = stmt.STAT_DS_METRIC_DATA
                 elif obj_name == "kubersmetricv":
                     view_query = stmt.STAT_RS_METRIC_DATA
+                elif obj_name == "kubersckindidv":
+                    view_query = stmt.RESOURCE_KIND_ID
 
                 if obj_name and view_query:
                     try:
@@ -1568,7 +1600,7 @@ class Processing:
                         sum(int(x["inodesUsed"]) for x in pod["volume"]) if "volume" in pod and "inodesUsed" in pod["volume"][0] else 0,
                         pod["ephemeral-storage"]["usedBytes"],
                         pod["ephemeral-storage"]["inodesUsed"],
-                        pod["process_stats"]["process_count"] if "ephemeral-storage" in pod and "process_count" in pod["process_stats"] else 0
+                        pod["process_stats"]["process_count"] if "process_stats" in pod and "process_count" in pod["process_stats"] else 0
                     ]
 
                     self.system_var.set_network_metric("podperf", podid, network_cum_usage)

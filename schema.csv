@@ -369,12 +369,49 @@ metric,kubepodvol,_ontunetime,int8,NOT NULL,
 metric,kubepodvol,_agenttime,int8,NOT NULL,
 metric,kubepodvol,_volused,int8,NULL,
 metric,kubepodvol,_voliused,int8,NULL,
-index,kubenodeperf,_nodeid,_ontunetime,_agenttime,
-index,kubenodesysco,_nodeid,_ontunetime,_agenttime,_syscontainerid
-index,kubepodperf,_podid,_ontunetime,_agenttime,
-index,kubecontainerperf,_containerid,_ontunetime,_agenttime,
-index,kubepodnet,_podid,_ontunetime,_agenttime,_deviceid
-index,kubepodvol,_podid,_ontunetime,_agenttime,_deviceid
+metricindex,kubenodeperf,time,_ontunetime,_agenttime,
+metricindex,kubenodesysco,time,_ontunetime,_agenttime,
+metricindex,kubepodperf,time,_ontunetime,_agenttime,
+metricindex,kubecontainerperf,time,_ontunetime,_agenttime,
+metricindex,kubepodnet,time,_ontunetime,_agenttime,
+metricindex,kubepodvol,time,_ontunetime,_agenttime,
+metricindex,kubenodeperf,nid,_nodeid,
+metricindex,kubenodesysco,nid,_nodeid,
+metricindex,kubenodesysco,cid,_syscontainerid,
+metricindex,kubepodperf,pid,_podid,
+metricindex,kubecontainerperf,cid,_containerid,
+metricindex,kubepodnet,pid,_podid,
+metricindex,kubepodvol,pid,_podid,
+metricindex,kubepodnet,did,_deviceid
+metricindex,kubepodvol,did,_deviceid
+refindex,kubenodeinfo,cid,_clusterid  
+refindex,kubensinfo,cid,_clusterid
+refindex,kubepodinfo,nnid,_nsid, _nodeid
+refindex,kubecontainerinfo,pid,_podid
+refindex,kubepodinfo,uid,_uid
+refindex,kubesvcinfo,uid,_uid
+refindex,kubesvcinfo,name,_svcname
+refindex,kubeinghostinfo,iid,_ingid
+refindex,kubeinghostinfo,backend,_backendtype, _backendname
+refindex,kubelabelinfo,kind,_kind, _kinduid
+refindex,kubeselectorinfo,kind,_kind, _kinduid
+refindex,kubesvcinfo,nid,_nsid
+refindex,kubeinginfo,nid,_nsid
+refindex,kubescinfo,cid,_clusterid
+refindex,kubepvcinfo,nsid,_nsid, _pvcscid
+refindex,kubeeventinfo,nid,_nsid
+refindex,kubeeventinfo,kind,_objkind, _objkinduid
+refindex,kubepodinfo,kind,_refkind, _refid
+refindex,kubersinfo,kind,_refkind, _refid
+refindex,kubedeployinfo,nid,_nsid
+refindex,kubestsinfo,nid,_nsid
+refindex,kubedsinfo,nid,_nsid
+refindex,kubersinfo,nid,_nsid
+refindex,kubelastnoderealtimeperf,nid,_nodeid
+refindex,kubelastpodrealtimeperf,pid,_podid
+refindex,kubensinfo,name,_nsname
+refindex,kubepodinfo,name,_podname
+refindex,kubepodinfo,nid,_nsid
 view,kubesvcpodmappingv
 view,kubeingpodmappingv
 view,kubensmetricv

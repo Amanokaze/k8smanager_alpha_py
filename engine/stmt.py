@@ -44,46 +44,46 @@ SELECT_SELECTORINFO = "select s.*, lv._keyvalue from kubeselectorinfo s, kubelab
 
 SELECT_SVC_POD_MAPPING = """
 select t.*
-  from (select skind, sid, suid, sname, 
-			   array_to_string(array_agg(slbid order by slbid),',') as slbids,
-			   lkind, lid, luid, lname,
-			   array_to_string(array_agg(llbid order by llbid),',') as llbids,
-			   case when sum(case when status = 'Running' then 1 else 0 end) > 0 then 'Running' else 'Failed' end runningstatus
-		  from (select s._kind skind, v._svcid sid, s._kinduid suid, v._svcname sname, s._lbvalueid slbid, l._kind lkind, p._podid lid, l._kinduid luid, p._podname lname, l._lbvalueid llbid, p._status status
+  from (select _svckind, _svcid, _svcuid, _svcname, 
+			   array_to_string(array_agg(_svclbid order by _svclbid),',') as _svclbids,
+			   _lbkind, _podid, _poduid, _podname,
+			   array_to_string(array_agg(_podlbid order by _podlbid),',') as _podlbids,
+			   case when sum(case when _status = 'Running' then 1 else 0 end) > 0 then 'Running' else 'Failed' end _runningstatus
+		  from (select s._kind _svckind, v._svcid _svcid, s._kinduid _svcuid, v._svcname _svcname, s._lbvalueid _svclbid, l._kind _lbkind, p._podid _podid, l._kinduid _poduid, p._podname _podname, l._lbvalueid _podlbid, p._status _status
 				  from kubeselectorinfo s, kubelabelinfo l, kubepodinfo p, kubesvcinfo v
 				 where l._enabled=1 and s._enabled=1 and p._enabled=1 and v._enabled=1
 		           and l._kind='Pod' and s._kind='Service'
 		           and l._kinduid = p._uid
 		           and s._kinduid = v._uid
 				   and l._lbvalueid=s._lbvalueid) t
-		 group by skind, sid, suid, sname, lkind, lid, luid, lname) t
- where t.slbids = t.llbids;
+		 group by _svckind, _svcid, _svcuid, _svcname, _lbkind, _podid, _poduid, _podname) t
+ where t._svclbids = t._podlbids;
 """
 
 SELECT_ING_SVC_POD_MAPPING = """
-select ingsvc.*, svcpod.lid, svcpod.luid, svcpod.lname, svcpod.runningstatus
+select ingsvc.*, svcpod._podid, svcpod._poduid, svcpod._podname, svcpod._runningstatus
   from (select t.*
-		  from (select skind, sid, suid, sname, 
-					   array_to_string(array_agg(slbid order by slbid),',') as slbids,
-					   lkind, lid, luid, lname,
-					   array_to_string(array_agg(llbid order by llbid),',') as llbids,
-					   case when sum(case when status = 'Running' then 1 else 0 end) > 0 then 'Running' else 'Failed' end runningstatus
-				  from (select s._kind skind, v._svcid sid, s._kinduid suid, v._svcname sname, s._lbvalueid slbid, l._kind lkind, p._podid lid, l._kinduid luid, p._podname lname, l._lbvalueid llbid, p._status status
+		  from (select _svckind, _svcid, _svcuid, _svcname, 
+					   array_to_string(array_agg(_svclbid order by _svclbid),',') as _svclbids,
+					   _lbkind, _podid, _poduid, _podname,
+					   array_to_string(array_agg(_podlbid order by _podlbid),',') as _podlbids,
+					   case when sum(case when _status = 'Running' then 1 else 0 end) > 0 then 'Running' else 'Failed' end _runningstatus
+				  from (select s._kind _svckind, v._svcid _svcid, s._kinduid _svcuid, v._svcname _svcname, s._lbvalueid _svclbid, l._kind _lbkind, p._podid _podid, l._kinduid _poduid, p._podname _podname, l._lbvalueid _podlbid, p._status _status
 						  from kubeselectorinfo s, kubelabelinfo l, kubepodinfo p, kubesvcinfo v
 						 where l._enabled=1 and s._enabled=1 and p._enabled=1 and v._enabled=1
 				           and l._kind='Pod' and s._kind='Service'
 				           and l._kinduid = p._uid
 				           and s._kinduid = v._uid
 						   and l._lbvalueid=s._lbvalueid) t
-				 group by skind, sid, suid, sname, lkind, lid, luid, lname) t
-		 where t.slbids = t.llbids) svcpod,
-		(select i._ingid iid, i._uid iuid, i._ingname, s._svcid sid, s._uid suid, s._svcname sname
+				 group by _svckind, _svcid, _svcuid, _svcname, _lbkind, _podid, _poduid, _podname) t
+		 where t._svclbids = t._podlbids) svcpod,
+		(select i._ingid _ingid, i._uid _inguid, i._ingname, s._svcid _svcid, s._uid _svcuid, s._svcname _svcname
 		  from kubeinginfo i, kubeinghostinfo ih, kubesvcinfo s
 		 where i._ingid = ih._ingid
            and i._enabled=1 and ih._enabled=1
 		   and ih._backendtype = 'service'
 		   and ih._backendname = s._svcname) ingsvc
- where ingsvc.suid = svcpod.suid;
+ where ingsvc._svcuid = svcpod._svcuid;
 """
 
 STAT_POD_COLUMNS = """
@@ -129,25 +129,25 @@ select n._nsid, n._nsname,
 """
 
 STAT_ING_METRIC_DATA = f"""
-select v.sid, v.sname,
+select v._svcid, v._svcname,
        {STAT_POD_COLUMNS}
 {STAT_POD_SUB_QUERY}
  right outer join kubeingpodmappingv v
-    on p._podid = v.lid
-   and v.runningstatus = 'Running'
- group by v.sid, v.sname
- order by v.sid;
+    on p._podid = v._podid
+   and v._runningstatus = 'Running'
+ group by v._svcid, v._svcname
+ order by v._svcid;
 """
 
 STAT_SVC_METRIC_DATA = f"""
-select v.sid, v.sname,
+select v._svcid, v._svcname,
        {STAT_POD_COLUMNS}
 {STAT_POD_SUB_QUERY}
  right outer join kubesvcpodmappingv v
-    on p._podid = v.lid
-   and v.runningstatus = 'Running'
- group by v.sid, v.sname
- order by v.sid;
+    on p._podid = v._podid
+   and v._runningstatus = 'Running'
+ group by v._svcid, v._svcname
+ order by v._svcid;
 """
 
 STAT_DEPLOY_METRIC_DATA = f"""
@@ -207,6 +207,24 @@ select rs._rsid, rs._rsname,
    and rs._availablers = rs._replicas
  group by rs._rsid, rs._rsname
  order by rs._rsid;
+"""
+
+RESOURCE_KIND_ID = f"""
+select 'Ingress' _kind, _ingid _id, _uid _uid, _ingname _name from kubeinginfo
+union all
+select 'Service' _kind, _svcid, _uid _uid, _svcname _name from kubesvcinfo
+union all
+select 'Deployment' _kind, _deployid id, _uid _uid, _deployname _name from kubedeployinfo
+union all
+select 'StatefulSet' _kind, _stsid id, _uid _uid, _stsname _name from kubestsinfo
+union all
+select 'DaemonSet' _kind, _dsid id, _uid _uid, _dsname _name from kubedsinfo
+union all
+select 'ReplicaSet' _kind, _rsid id, _uid _uid, _rsname _name from kubersinfo
+union all
+select 'Pod' _kind, _podid id, _uid _uid, _podname _name from kubepodinfo
+union all
+select 'Node' _kind, _nodeid id, _nodeuid _uid, _nodename _name from kubenodeinfo;
 """
 
 SELECT_VIEWER_OVERALL = """SELECT n._nodename, p.*
